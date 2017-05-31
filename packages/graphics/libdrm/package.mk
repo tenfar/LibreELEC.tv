@@ -34,6 +34,7 @@ get_graphicdrivers
 
 DRM_CONFIG="--disable-intel --disable-radeon --disable-amdgpu"
 DRM_CONFIG="$DRM_CONFIG --disable-nouveau --disable-vmwgfx --disable-vc4"
+DRM_CONFIG="$DRM_CONFIG --disable-freedreno --disable-etnaviv-experimental-api"
 
 for drv in $GRAPHIC_DRIVERS; do
   [ "$drv" = "i915" -o "$drv" = "i965" ] && \
@@ -48,6 +49,9 @@ for drv in $GRAPHIC_DRIVERS; do
 
   [ "$drv" = "vc4" ] && \
     DRM_CONFIG=`echo $DRM_CONFIG | sed -e 's/disable-vc4/enable-vc4/'`
+
+  [ "$drv" = "etnaviv" ] && \
+    DRM_CONFIG=`echo $DRM_CONFIG | sed -e 's/disable-etnaviv/enable-etnaviv/'`
 done
 
 PKG_CONFIGURE_OPTS_TARGET="--disable-udev \
