@@ -48,6 +48,13 @@ case "$LINUX" in
     PKG_DEPENDS_TARGET="$PKG_DEPENDS_TARGET aml-dtbtools:host"
     PKG_BUILD_PERF="no"
     ;;
+  amlogic-mainline)
+    PKG_VERSION="661e50b" #4.16-rc4
+    PKG_SHA256="ebdd7f9ba1dfa2c246fccc503e2c63eee7760d8243d49f1cef556962dfaff476"
+    PKG_URL="https://github.com/torvalds/linux/archive/$PKG_VERSION.tar.gz"
+    PKG_SOURCE_DIR="$PKG_NAME-$PKG_VERSION*"
+    PKG_PATCH_DIRS="default"
+    ;;
   rockchip-4.4)
     PKG_VERSION="eae92ae2b930999857df47c3057327c1c490454b"
     PKG_SHA256="da453ca6ecefc3719a1165bc7b08fe00fc2b50ab64f6289ef6f3670a9fc1ceca"
@@ -58,13 +65,6 @@ case "$LINUX" in
     PKG_VERSION="29653ef5475124316b9284adb6cbfc97e9cae48f" # 4.14.37
     PKG_SHA256="20e596c9bfaa739bf9178431c9fa332429b63671368826361b1a46ccf3354236"
     PKG_URL="https://github.com/raspberrypi/linux/archive/$PKG_VERSION.tar.gz"
-    ;;
-  amlogic-4.16)
-    PKG_VERSION="4a3928c" #4.16-rc3
-    PKG_SHA256="2b4365ab610334c77c174dc2e945bc8145333453ba68ee3d3005e403318f06bf"
-    PKG_URL="https://github.com/torvalds/linux/archive/$PKG_VERSION.tar.gz"
-    PKG_SOURCE_DIR="$PKG_NAME-$PKG_VERSION*"
-    PKG_PATCH_DIRS="default"
     ;;
   *)
     PKG_VERSION="4.14.37"
