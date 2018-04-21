@@ -22,4 +22,4 @@ mkdir -p $RELEASE_DIR/3rdparty/bootloader
     cp -a $(get_build_dir $BOOTLOADER)/spl/sunxi-spl.bin $RELEASE_DIR/3rdparty/bootloader
   fi
 
-  cp -a $(get_build_dir linux)/arch/$TARGET_KERNEL_ARCH/boot/dts/*.dtb $RELEASE_DIR/3rdparty/bootloader
+  cp -a $(get_build_dir linux)/arch/$TARGET_KERNEL_ARCH/boot/dts/sun8i-h3-*.dtb $RELEASE_DIR/3rdparty/bootloader

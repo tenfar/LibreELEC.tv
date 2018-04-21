@@ -1,18 +1,106 @@
-From 23829558b10e69f4962474849c3f4b173c5ef009 Mon Sep 17 00:00:00 2001
-From: Jernej Skrabec <jernej.skrabec@siol.net>
-Date: Tue, 5 Sep 2017 22:06:32 +0200
-Subject: [PATCH] ARM: sun8i: h3: Enable HDMI audio on H3 boards
-
-Signed-off-by: Jernej Skrabec <jernej.skrabec@siol.net>
----
- arch/arm/boot/dts/sun8i-h3-orangepi-2.dts       | 8 ++++++++
- arch/arm/boot/dts/sun8i-h3-orangepi-lite.dts    | 8 ++++++++
- arch/arm/boot/dts/sun8i-h3-orangepi-one.dts     | 8 ++++++++
- arch/arm/boot/dts/sun8i-h3-orangepi-pc.dts      | 8 ++++++++
- 7 files changed, 56 insertions(+)
-
+diff --git a/arch/arm/boot/dts/sun8i-h3-bananapi-m2-plus.dts b/arch/arm/boot/dts/sun8i-h3-bananapi-m2-plus.dts
+index 30540dc8e0c5..5beee35e4b1b 100644
+--- a/arch/arm/boot/dts/sun8i-h3-bananapi-m2-plus.dts
++++ b/arch/arm/boot/dts/sun8i-h3-bananapi-m2-plus.dts
+@@ -154,6 +154,10 @@
+ 	};
+ };
+ 
++&i2s2 {
++	status = "okay";
++};
++
+ &ir {
+ 	pinctrl-names = "default";
+ 	pinctrl-0 = <&ir_pins_a>;
+@@ -211,6 +215,10 @@
+ 	status = "okay";
+ };
+ 
++&sound_hdmi {
++	status = "okay";
++};
++
+ &uart0 {
+ 	pinctrl-names = "default";
+ 	pinctrl-0 = <&uart0_pins_a>;
+diff --git a/arch/arm/boot/dts/sun8i-h3-beelink-x2.dts b/arch/arm/boot/dts/sun8i-h3-beelink-x2.dts
+index cf1f970b0c6f..91365c815773 100644
+--- a/arch/arm/boot/dts/sun8i-h3-beelink-x2.dts
++++ b/arch/arm/boot/dts/sun8i-h3-beelink-x2.dts
+@@ -133,6 +133,10 @@
+ 	};
+ };
+ 
++&i2s2 {
++	status = "okay";
++};
++
+ &ir {
+ 	pinctrl-names = "default";
+ 	pinctrl-0 = <&ir_pins_a>;
+@@ -184,6 +188,10 @@
+ 	status = "okay";
+ };
+ 
++&sound_hdmi {
++	status = "okay";
++};
++
+ &spdif {
+ 	pinctrl-names = "default";
+ 	pinctrl-0 = <&spdif_tx_pins_a>;
+diff --git a/arch/arm/boot/dts/sun8i-h3-libretech-all-h3-cc.dts b/arch/arm/boot/dts/sun8i-h3-libretech-all-h3-cc.dts
+index b20a710da7bc..ca536d042985 100644
+--- a/arch/arm/boot/dts/sun8i-h3-libretech-all-h3-cc.dts
++++ b/arch/arm/boot/dts/sun8i-h3-libretech-all-h3-cc.dts
+@@ -168,6 +168,10 @@
+ 	};
+ };
+ 
++&i2s2 {
++	status = "okay";
++};
++
+ &ir {
+ 	pinctrl-names = "default";
+ 	pinctrl-0 = <&ir_pins_a>;
+@@ -197,6 +201,10 @@
+ 	status = "okay";
+ };
+ 
++&sound_hdmi {
++	status = "okay";
++};
++
+ &uart0 {
+ 	pinctrl-names = "default";
+ 	pinctrl-0 = <&uart0_pins_a>;
+diff --git a/arch/arm/boot/dts/sun8i-h3-nanopi-m1.dts b/arch/arm/boot/dts/sun8i-h3-nanopi-m1.dts
+index 9412668bb888..77eb0a2b2ca7 100644
+--- a/arch/arm/boot/dts/sun8i-h3-nanopi-m1.dts
++++ b/arch/arm/boot/dts/sun8i-h3-nanopi-m1.dts
+@@ -91,6 +91,10 @@
+ 	};
+ };
+ 
++&i2s2 {
++	status = "okay";
++};
++
+ &ir {
+ 	pinctrl-names = "default";
+ 	pinctrl-0 = <&ir_pins_a>;
+@@ -104,3 +108,7 @@
+ &ohci2 {
+ 	status = "okay";
+ };
++
++&sound_hdmi {
++	status = "okay";
++};
 diff --git a/arch/arm/boot/dts/sun8i-h3-orangepi-2.dts b/arch/arm/boot/dts/sun8i-h3-orangepi-2.dts
-index 586181c4ce8b5..ef98e28e12137 100644
+index f1fc6bdca8be..2080ef07d934 100644
 --- a/arch/arm/boot/dts/sun8i-h3-orangepi-2.dts
 +++ b/arch/arm/boot/dts/sun8i-h3-orangepi-2.dts
 @@ -150,6 +150,10 @@
@@ -26,7 +114,7 @@ index 586181c4ce8b5..ef98e28e12137 100644
  &ir {
  	pinctrl-names = "default";
  	pinctrl-0 = <&ir_pins_a>;
-@@ -217,6 +221,10 @@
+@@ -208,6 +212,10 @@
  	status = "okay";
  };
  
@@ -34,11 +122,11 @@ index 586181c4ce8b5..ef98e28e12137 100644
 +	status = "okay";
 +};
 +
- &tcon0 {
- 	status = "okay";
- };
+ &uart0 {
+ 	pinctrl-names = "default";
+ 	pinctrl-0 = <&uart0_pins_a>;
 diff --git a/arch/arm/boot/dts/sun8i-h3-orangepi-lite.dts b/arch/arm/boot/dts/sun8i-h3-orangepi-lite.dts
-index cecf4af1b7433..01540419a0ca6 100644
+index 476ae8e387ca..6331509d8b5b 100644
 --- a/arch/arm/boot/dts/sun8i-h3-orangepi-lite.dts
 +++ b/arch/arm/boot/dts/sun8i-h3-orangepi-lite.dts
 @@ -124,6 +124,10 @@
@@ -52,7 +140,7 @@ index cecf4af1b7433..01540419a0ca6 100644
  &ir {
  	pinctrl-names = "default";
  	pinctrl-0 = <&ir_pins_a>;
-@@ -188,6 +192,10 @@
+@@ -179,6 +183,10 @@
  	};
  };
  
@@ -60,14 +148,14 @@ index cecf4af1b7433..01540419a0ca6 100644
 +	status = "okay";
 +};
 +
- &tcon0 {
- 	status = "okay";
- };
+ &uart0 {
+ 	pinctrl-names = "default";
+ 	pinctrl-0 = <&uart0_pins_a>;
 diff --git a/arch/arm/boot/dts/sun8i-h3-orangepi-one.dts b/arch/arm/boot/dts/sun8i-h3-orangepi-one.dts
-index ad1739e1d01d0..d3277f5d921b9 100644
+index 3328fe583c9b..b8849b54a734 100644
 --- a/arch/arm/boot/dts/sun8i-h3-orangepi-one.dts
 +++ b/arch/arm/boot/dts/sun8i-h3-orangepi-one.dts
-@@ -130,6 +130,10 @@
+@@ -129,6 +129,10 @@
  	};
  };
  
@@ -75,10 +163,10 @@ index ad1739e1d01d0..d3277f5d921b9 100644
 +	status = "okay";
 +};
 +
- &mixer0 {
- 	status = "okay";
- };
-@@ -176,6 +180,10 @@
+ &mmc0 {
+ 	vmmc-supply = <&reg_vcc3v3>;
+ 	bus-width = <4>;
+@@ -168,6 +172,10 @@
  	status = "okay";
  };
  
@@ -86,11 +174,11 @@ index ad1739e1d01d0..d3277f5d921b9 100644
 +	status = "okay";
 +};
 +
- &tcon0 {
- 	status = "okay";
- };
+ &uart0 {
+ 	pinctrl-names = "default";
+ 	pinctrl-0 = <&uart0_pins_a>;
 diff --git a/arch/arm/boot/dts/sun8i-h3-orangepi-pc.dts b/arch/arm/boot/dts/sun8i-h3-orangepi-pc.dts
-index 24ec7376f4796..1d567ccd76d16 100644
+index cea4d647ecbf..03d60c760f4c 100644
 --- a/arch/arm/boot/dts/sun8i-h3-orangepi-pc.dts
 +++ b/arch/arm/boot/dts/sun8i-h3-orangepi-pc.dts
 @@ -146,6 +146,10 @@
@@ -104,7 +192,7 @@ index 24ec7376f4796..1d567ccd76d16 100644
  &ir {
  	pinctrl-names = "default";
  	pinctrl-0 = <&ir_pins_a>;
-@@ -206,6 +210,10 @@
+@@ -199,6 +203,10 @@
  	status = "okay";
  };
  
@@ -112,6 +200,84 @@ index 24ec7376f4796..1d567ccd76d16 100644
 +	status = "okay";
 +};
 +
- &tcon0 {
+ &uart0 {
+ 	pinctrl-names = "default";
+ 	pinctrl-0 = <&uart0_pins_a>;
+diff --git a/arch/arm64/boot/dts/allwinner/sun50i-h5-orangepi-pc2.dts b/arch/arm64/boot/dts/allwinner/sun50i-h5-orangepi-pc2.dts
+index 98862c7c7258..d592947ccb25 100644
+--- a/arch/arm64/boot/dts/allwinner/sun50i-h5-orangepi-pc2.dts
++++ b/arch/arm64/boot/dts/allwinner/sun50i-h5-orangepi-pc2.dts
+@@ -178,6 +178,10 @@
+ 	};
+ };
+ 
++&i2s2 {
++	status = "okay";
++};
++
+ &ir {
+ 	pinctrl-names = "default";
+ 	pinctrl-0 = <&ir_pins_a>;
+@@ -207,6 +211,10 @@
  	status = "okay";
  };
+ 
++&sound_hdmi {
++	status = "okay";
++};
++
+ &uart0 {
+ 	pinctrl-names = "default";
+ 	pinctrl-0 = <&uart0_pins_a>;
+diff --git a/arch/arm64/boot/dts/allwinner/sun50i-h5-orangepi-prime.dts b/arch/arm64/boot/dts/allwinner/sun50i-h5-orangepi-prime.dts
+index b75ca4d7d001..40ebfee99c95 100644
+--- a/arch/arm64/boot/dts/allwinner/sun50i-h5-orangepi-prime.dts
++++ b/arch/arm64/boot/dts/allwinner/sun50i-h5-orangepi-prime.dts
+@@ -185,6 +185,10 @@
+ 	};
+ };
+ 
++&i2s2 {
++	status = "okay";
++};
++
+ &ir {
+ 	pinctrl-names = "default";
+ 	pinctrl-0 = <&ir_pins_a>;
+@@ -222,6 +226,10 @@
+ 	status = "okay";
+ };
+ 
++&sound_hdmi {
++	status = "okay";
++};
++
+ &uart0 {
+ 	pinctrl-names = "default";
+ 	pinctrl-0 = <&uart0_pins_a>;
+diff --git a/arch/arm64/boot/dts/allwinner/sun50i-h5-orangepi-zero-plus2.dts b/arch/arm64/boot/dts/allwinner/sun50i-h5-orangepi-zero-plus2.dts
+index 53c8c11620e0..562607744242 100644
+--- a/arch/arm64/boot/dts/allwinner/sun50i-h5-orangepi-zero-plus2.dts
++++ b/arch/arm64/boot/dts/allwinner/sun50i-h5-orangepi-zero-plus2.dts
+@@ -98,6 +98,10 @@
+ 	};
+ };
+ 
++&i2s2 {
++	status = "okay";
++};
++
+ &mmc0 {
+ 	vmmc-supply = <&reg_vcc3v3>;
+ 	bus-width = <4>;
+@@ -132,6 +136,10 @@
+ 	status = "okay";
+ };
+ 
++&sound_hdmi {
++	status = "okay";
++};
++
+ &uart0 {
+ 	pinctrl-names = "default";
+ 	pinctrl-0 = <&uart0_pins_a>;
