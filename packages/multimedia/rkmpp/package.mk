@@ -17,8 +17,8 @@
 ################################################################################
 
 PKG_NAME="rkmpp"
-PKG_VERSION="c8a41a6"
-PKG_SHA256="01b84eecde7cae98035ecce866b48f903f9deaa7e19b048ff9cb87edf6446659"
+PKG_VERSION="e20b535"
+PKG_SHA256="ef85c8d2ef44b6790c371294e509373d614fa6117d84f7595399080666f60917"
 PKG_ARCH="arm aarch64"
 PKG_LICENSE="APL"
 PKG_SITE="https://github.com/rockchip-linux/mpp"
@@ -36,13 +36,5 @@ else
 fi
 
 PKG_CMAKE_OPTS_TARGET="-DRKPLATFORM=ON \
-                       -DENABLE_AVSD=OFF \
-                       -DENABLE_H263D=OFF \
-                       -DENABLE_H264D=ON \
-                       -DENABLE_H265D=ON \
-                       -DENABLE_MPEG2D=ON \
-                       -DENABLE_MPEG4D=ON \
-                       -DENABLE_VP8D=ON \
                        -DENABLE_VP9D=$PKG_ENABLE_VP9D \
-                       -DENABLE_JPEGD=OFF \
                        -DHAVE_DRM=ON"
