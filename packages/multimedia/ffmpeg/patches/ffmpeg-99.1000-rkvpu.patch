@@ -1,0 +1,1211 @@
+From 0f60deac162f90f70c047c65c7257cce2a737574 Mon Sep 17 00:00:00 2001
+From: Jonas Karlman <jonas@kwiboo.se>
+Date: Wed, 2 May 2018 20:42:18 +0200
+Subject: [PATCH] rkvpu: initial work
+
+---
+ configure                 |   2 +
+ libavcodec/Makefile       |   2 +
+ libavcodec/hwaccel.h      |   2 +
+ libavcodec/rkvpu.c        | 321 ++++++++++++++++++++++++++++++++++++++
+ libavcodec/rkvpu.h        |  69 ++++++++
+ libavutil/hwcontext_drm.c |  12 ++
+ 6 files changed, 408 insertions(+)
+ create mode 100644 libavcodec/rkvpu.c
+ create mode 100644 libavcodec/rkvpu.h
+
+diff --git a/configure b/configure
+index dee507cb6a..33a284529d 100755
+--- a/configure
++++ b/configure
+@@ -323,6 +323,7 @@ External library support:
+   --enable-omx             enable OpenMAX IL code [no]
+   --enable-omx-rpi         enable OpenMAX IL code for Raspberry Pi [no]
+   --enable-rkmpp           enable Rockchip Media Process Platform code [no]
++  --enable-rkvpu           enable Rockchip VPU code [no]
+   --disable-v4l2-m2m       disable V4L2 mem2mem code [autodetect]
+   --disable-vaapi          disable Video Acceleration API (mainly Unix/Intel) code [autodetect]
+   --disable-vdpau          disable Nvidia Video Decode and Presentation API for Unix code [autodetect]
+@@ -1761,6 +1762,7 @@ HWACCEL_LIBRARY_LIST="
+     mmal
+     omx
+     opencl
++    rkvpu
+ "
+ 
+ DOCUMENT_LIST="
+diff --git a/libavcodec/Makefile b/libavcodec/Makefile
+index 4b8ad121db..285b03b155 100644
+--- a/libavcodec/Makefile
++++ b/libavcodec/Makefile
+@@ -841,6 +841,7 @@ OBJS-$(CONFIG_ADPCM_YAMAHA_ENCODER)       += adpcmenc.o adpcm_data.o
+ OBJS-$(CONFIG_D3D11VA)                    += dxva2.o
+ OBJS-$(CONFIG_DXVA2)                      += dxva2.o
+ OBJS-$(CONFIG_NVDEC)                      += nvdec.o
++OBJS-$(CONFIG_RKVPU)                      += rkvpu.o
+ OBJS-$(CONFIG_VAAPI)                      += vaapi_decode.o
+ OBJS-$(CONFIG_VIDEOTOOLBOX)               += videotoolbox.o
+ OBJS-$(CONFIG_VDPAU)                      += vdpau.o
+@@ -1099,6 +1100,7 @@ SKIPHEADERS-$(CONFIG_LIBWEBP_ENCODER)  += libwebpenc_common.h
+ SKIPHEADERS-$(CONFIG_MEDIACODEC)       += mediacodecdec_common.h mediacodec_surface.h mediacodec_wrapper.h mediacodec_sw_buffer.h
+ SKIPHEADERS-$(CONFIG_NVDEC)            += nvdec.h
+ SKIPHEADERS-$(CONFIG_NVENC)            += nvenc.h
++SKIPHEADERS-$(CONFIG_RKVPU)            += rkvpu.h
+ SKIPHEADERS-$(CONFIG_QSV)              += qsv.h qsv_internal.h
+ SKIPHEADERS-$(CONFIG_QSVDEC)           += qsvdec.h
+ SKIPHEADERS-$(CONFIG_QSVENC)           += qsvenc.h
+diff --git a/libavcodec/hwaccel.h b/libavcodec/hwaccel.h
+index 3aaa92571c..1eb0f6a15e 100644
+--- a/libavcodec/hwaccel.h
++++ b/libavcodec/hwaccel.h
+@@ -70,6 +70,8 @@ typedef struct AVCodecHWConfigInternal {
+     HW_CONFIG_HWACCEL(1, 1, 0, D3D11,        D3D11VA,      ff_ ## codec ## _d3d11va2_hwaccel)
+ #define HWACCEL_NVDEC(codec) \
+     HW_CONFIG_HWACCEL(1, 1, 0, CUDA,         CUDA,         ff_ ## codec ## _nvdec_hwaccel)
++#define HWACCEL_RKVPU(codec) \
++    HW_CONFIG_HWACCEL(1, 0, 0, DRM_PRIME,    DRM,          ff_ ## codec ## _rkvpu_hwaccel)
+ #define HWACCEL_VAAPI(codec) \
+     HW_CONFIG_HWACCEL(1, 1, 1, VAAPI,        VAAPI,        ff_ ## codec ## _vaapi_hwaccel)
+ #define HWACCEL_VDPAU(codec) \
+diff --git a/libavcodec/rkvpu.c b/libavcodec/rkvpu.c
+new file mode 100644
+index 0000000000..f1f6acab2b
+--- /dev/null
++++ b/libavcodec/rkvpu.c
+@@ -0,0 +1,321 @@
++/*
++ * This file is part of FFmpeg.
++ *
++ * FFmpeg is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU Lesser General Public
++ * License as published by the Free Software Foundation; either
++ * version 2.1 of the License, or (at your option) any later version.
++ *
++ * FFmpeg is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ * Lesser General Public License for more details.
++ *
++ * You should have received a copy of the GNU Lesser General Public
++ * License along with FFmpeg; if not, write to the Free Software
++ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
++ */
++
++#include <assert.h>
++#include <string.h>
++
++#include <sys/mman.h>
++#include <sys/ioctl.h>
++#include <sys/types.h>
++#include <sys/stat.h>
++#include <fcntl.h>
++#include <unistd.h>
++
++#include <drm_fourcc.h>
++#include <xf86drm.h>
++#include <drm/rockchip_drm.h>
++#include <video/rk_vpu_service.h>
++
++#include "libavutil/common.h"
++#include "libavutil/log.h"
++#include "libavutil/time.h"
++
++#include "avcodec.h"
++#include "decode.h"
++#include "rkvpu.h"
++
++#define VPU_DEVICE_NAME "/dev/vpu_service"
++#define VPU_CLIENT_TYPE_DEC 0x1
++
++int ff_rkvpu_set_hw_regs(AVCodecContext *avctx, void *hw_regs, int nb_regs)
++{
++    RKVPUContext *rkctx = avctx->internal->hwaccel_priv_data;
++    struct vpu_request req = {0};
++    int ret;
++
++    av_log(avctx, AV_LOG_DEBUG, "%s: avctx=%p hw_regs=%p nb_regs=%d\n", __func__, avctx, hw_regs, nb_regs);
++
++    req.req = hw_regs;
++    req.size = nb_regs * sizeof(uint32_t);
++
++    ret = ioctl(rkctx->fd, VPU_IOC_SET_REG, &req);
++    if (ret < 0) {
++        av_log(avctx, AV_LOG_ERROR, "%s: ioctl VPU_IOC_SET_REG failed, ret=%d errno=%d\n", __func__, ret, errno);
++        return AVERROR(EINVAL);
++    }
++
++    return 0;
++}
++
++int ff_rkvpu_get_hw_regs(AVCodecContext *avctx, void *hw_regs, int nb_regs)
++{
++    RKVPUContext *rkctx = avctx->internal->hwaccel_priv_data;
++    struct vpu_request req = {0};
++    int ret;
++
++    av_log(avctx, AV_LOG_DEBUG, "%s: avctx=%p hw_regs=%p nb_regs=%d\n", __func__, avctx, hw_regs, nb_regs);
++
++    req.req = hw_regs;
++    req.size = nb_regs * sizeof(uint32_t);
++
++    ret = ioctl(rkctx->fd, VPU_IOC_GET_REG, &req);
++    if (ret < 0) {
++        av_log(avctx, AV_LOG_ERROR, "%s: ioctl VPU_IOC_GET_REG failed, ret=%d errno=%d\n", __func__, ret, errno);
++        return AVERROR(EINVAL);
++    }
++
++    return 0;
++}
++
++int ff_rkvpu_gem_mmap(RKGEMDescriptor *gem)
++{
++    struct drm_rockchip_gem_map_off gem_map = {0};
++    void *addr;
++    int ret;
++
++    av_log(NULL, AV_LOG_DEBUG, "%s: gem=%p handle=%u size=%"PRIu64" fd=%d offset=%"PRIu64" addr=%p\n", __func__, gem, gem->handle, gem->size, gem->fd, gem->offset, gem->addr);
++
++    if (gem->addr)
++        return 0;
++
++    gem_map.handle = gem->handle;
++    ret = drmIoctl(gem->hwctx->fd, DRM_IOCTL_ROCKCHIP_GEM_MAP_OFFSET, &gem_map);
++    if (ret) {
++        av_log(NULL, AV_LOG_ERROR, "%s: ioctl DRM_IOCTL_ROCKCHIP_GEM_MAP_OFFSET failed, ret=%d errno=%d\n", __func__, ret, errno);
++        return AVERROR(EINVAL);
++    }
++    gem->offset = gem_map.offset;
++
++    addr = mmap(NULL, gem->size, PROT_READ | PROT_WRITE, MAP_SHARED, gem->hwctx->fd, gem_map.offset);
++    if (addr == MAP_FAILED) {
++        av_log(NULL, AV_LOG_ERROR, "%s: mmap failed, errno=%d\n", __func__, errno);
++        return AVERROR(EINVAL);
++    }
++    gem->addr = addr;
++
++    av_log(NULL, AV_LOG_DEBUG, "%s: gem=%p handle=%u size=%"PRIu64" fd=%d offset=%"PRIu64" addr=%p\n", __func__, gem, gem->handle, gem->size, gem->fd, gem->offset, gem->addr);
++
++    return 0;
++}
++
++int ff_rkvpu_gem_munmap(RKGEMDescriptor *gem)
++{
++    int ret;
++
++    av_log(NULL, AV_LOG_DEBUG, "%s: gem=%p handle=%u size=%"PRIu64" fd=%d offset=%"PRIu64" addr=%p\n", __func__, gem, gem->handle, gem->size, gem->fd, gem->offset, gem->addr);
++
++    if (!gem->addr)
++        return 0;
++
++    ret = munmap(gem->addr, gem->size);
++    if (ret) {
++        av_log(NULL, AV_LOG_ERROR, "%s: munmap failed, ret=%d errno=%d\n", __func__, ret, errno);
++        return AVERROR(EINVAL);
++    }
++
++    return 0;
++}
++
++void ff_rkvpu_gem_free(RKGEMDescriptor *gem)
++{
++    struct drm_gem_close gem_close = {0};
++    int ret;
++
++    if (!gem)
++        return;
++
++    av_log(NULL, AV_LOG_DEBUG, "%s: gem=%p handle=%u size=%"PRIu64" fd=%d offset=%"PRIu64" addr=%p\n", __func__, gem, gem->handle, gem->size, gem->fd, gem->offset, gem->addr);
++
++    if (gem->addr)
++        ff_rkvpu_gem_munmap(gem);
++
++    if (gem->handle) {
++        gem_close.handle = gem->handle;
++        ret = drmIoctl(gem->hwctx->fd, DRM_IOCTL_GEM_CLOSE, &gem_close);
++        if (ret)
++            av_log(NULL, AV_LOG_ERROR, "%s: ioctl DRM_IOCTL_GEM_CLOSE failed, ret=%d errno=%d\n", __func__, ret, errno);
++    }
++
++    if (gem->fd >= 0)
++        close(gem->fd);
++
++    av_free(gem);
++}
++
++RKGEMDescriptor *ff_rkvpu_gem_alloc(AVDRMDeviceContext *hwctx, uint64_t size)
++{
++    RKGEMDescriptor *gem = NULL;
++    struct drm_rockchip_gem_create gem_create = {0};
++    struct drm_prime_handle prime_handle = {0};
++    int ret;
++
++    av_log(NULL, AV_LOG_DEBUG, "%s: hwctx=%p fd=%d size=%"PRIu64"\n", __func__, hwctx, hwctx->fd, size);
++
++    gem = av_mallocz(sizeof(RKGEMDescriptor));
++    if (!gem)
++        return NULL;
++
++    gem->hwctx = hwctx;
++    gem->fd = -1;
++
++    gem_create.size = size;
++    ret = drmIoctl(gem->hwctx->fd, DRM_IOCTL_ROCKCHIP_GEM_CREATE, &gem_create);
++    if (ret) {
++        av_log(NULL, AV_LOG_ERROR, "%s: ioctl DRM_IOCTL_ROCKCHIP_GEM_CREATE failed, ret=%d errno=%d\n", __func__, ret, errno);
++        ff_rkvpu_gem_free(gem);
++        return NULL;
++    }
++
++    gem->handle = gem_create.handle;
++    gem->size = gem_create.size;
++
++    prime_handle.handle = gem->handle;
++    ret = drmIoctl(gem->hwctx->fd, DRM_IOCTL_PRIME_HANDLE_TO_FD, &prime_handle);
++    if (ret) {
++        av_log(NULL, AV_LOG_ERROR, "%s: ioctl DRM_IOCTL_PRIME_HANDLE_TO_FD failed, ret=%d errno=%d\n", __func__, ret, errno);
++        ff_rkvpu_gem_free(gem);
++        return NULL;
++    }
++
++    gem->fd = prime_handle.fd;
++
++    av_log(NULL, AV_LOG_DEBUG, "%s: gem=%p handle=%u size=%"PRIu64" fd=%d\n", __func__, gem, gem->handle, gem->size, gem->fd);
++
++    return gem;
++}
++
++static void rkvpu_buffer_free(void *opaque, uint8_t *data)
++{
++    RKGEMDescriptor *gem = (RKGEMDescriptor*)data;
++
++    av_log(NULL, AV_LOG_DEBUG, "%s: gem=%p handle=%u size=%"PRIu64" fd=%d offset=%"PRIu64" addr=%p\n", __func__, gem, gem->handle, gem->size, gem->fd, gem->offset, gem->addr);
++
++    ff_rkvpu_gem_free(gem);
++}
++
++static AVBufferRef *rkvpu_buffer_alloc(void *opaque, int size)
++{
++    AVCodecContext *avctx = opaque;
++    AVHWFramesContext *hwfc = (AVHWFramesContext*)avctx->hw_frames_ctx->data;
++    AVDRMDeviceContext *hwctx = hwfc->device_ctx->hwctx;
++    RKGEMDescriptor *gem = NULL;
++    AVBufferRef *ref = NULL;
++    uint32_t width, height;
++
++    av_log(NULL, AV_LOG_DEBUG, "%s: avctx=%p hwfc=%p width=%d height=%d hwctx=%p fd=%d\n", __func__, avctx, hwfc, hwfc->width, hwfc->height, hwctx, hwctx->fd);
++
++    // TODO: use correct format and size
++    width = FFALIGN(hwfc->width, 16);
++    height = FFALIGN(hwfc->height, 16);
++
++    gem = ff_rkvpu_gem_alloc(hwctx, width * height * 3 / 2);
++    if (!gem)
++        return NULL;
++
++    ref = av_buffer_create((uint8_t*)gem, sizeof(RKGEMDescriptor), rkvpu_buffer_free, NULL, 0);
++    if (!ref) {
++        ff_rkvpu_gem_free(gem);
++        return NULL;
++    }
++
++    gem->format = DRM_FORMAT_NV12;
++    gem->width = width;
++    gem->height = height;
++
++    return ref;
++}
++
++static void rkvpu_pool_free(void *opaque)
++{
++    av_log(NULL, AV_LOG_DEBUG, "%s: opaque=%p\n", __func__, opaque);
++}
++
++int ff_rkvpu_common_frame_params(AVCodecContext *avctx, AVBufferRef *hw_frames_ctx)
++{
++    AVHWFramesContext *hwfc = (AVHWFramesContext*)hw_frames_ctx->data;
++
++    av_log(avctx, AV_LOG_DEBUG, "%s: avctx=%p hw_frames_ctx=%p hwfc=%p\n", __func__, avctx, hw_frames_ctx, hwfc);
++
++    hwfc->format = AV_PIX_FMT_DRM_PRIME;
++    hwfc->sw_format = avctx->sw_pix_fmt;
++    hwfc->width = FFALIGN(avctx->coded_width, 16);
++    hwfc->height = FFALIGN(avctx->coded_height, 16);
++
++    return 0;
++}
++
++int ff_rkvpu_decode_init(AVCodecContext *avctx)
++{
++    RKVPUContext *rkctx = avctx->internal->hwaccel_priv_data;
++    AVHWFramesContext *hwfc;
++    int ret;
++
++    av_log(avctx, AV_LOG_DEBUG, "%s: avctx=%p rkctx=%p hw_device_ctx=%p hw_frames_ctx=%p\n", __func__, avctx, rkctx, avctx->hw_device_ctx, avctx->hw_frames_ctx);
++
++    ret = ff_decode_get_hw_frames_ctx(avctx, AV_HWDEVICE_TYPE_DRM);
++    if (ret < 0)
++        return ret;
++
++    hwfc = (AVHWFramesContext*)avctx->hw_frames_ctx->data;
++    rkctx->hwctx = hwfc->device_ctx->hwctx;
++
++    rkctx->fd = open(VPU_DEVICE_NAME, O_RDWR);
++    if (rkctx->fd < 0) {
++        av_log(avctx, AV_LOG_ERROR, "%s: opening %s failed, errno=%d\n", __func__, VPU_DEVICE_NAME, errno);
++        return AVERROR(EINVAL);
++    }
++
++    ret = ioctl(rkctx->fd, VPU_IOC_SET_CLIENT_TYPE, VPU_CLIENT_TYPE_DEC);
++    if (ret < 0) {
++        av_log(avctx, AV_LOG_ERROR, "%s: ioctl VPU_IOC_SET_CLIENT_TYPE failed, ret=%d errno=%d\n", __func__, ret, errno);
++        ret = AVERROR(EINVAL);
++        goto fail;
++    }
++
++    rkctx->pool = av_buffer_pool_init2(sizeof(RKGEMDescriptor), avctx, rkvpu_buffer_alloc, rkvpu_pool_free);
++    if (!rkctx->pool) {
++        ret = AVERROR(ENOMEM);
++        goto fail;
++    }
++
++    av_log(avctx, AV_LOG_DEBUG, "%s: avctx=%p rkctx=%p hwfc=%p hwctx=%p fd=%d pool=%p\n", __func__, avctx, rkctx, hwfc, rkctx->hwctx, rkctx->fd, rkctx->pool);
++
++    return 0;
++
++fail:
++    ff_rkvpu_decode_uninit(avctx);
++    return ret;
++}
++
++int ff_rkvpu_decode_uninit(AVCodecContext *avctx)
++{
++    RKVPUContext *rkctx = avctx->internal->hwaccel_priv_data;
++
++    av_log(avctx, AV_LOG_DEBUG, "%s: avctx=%p rkctx=%p hwctx=%p fd=%d pool=%p bitstream=%p qp_table=%p hw_regs=%p\n", __func__, avctx, rkctx, rkctx->hwctx, rkctx->fd, rkctx->pool, rkctx->bitstream, rkctx->qp_table, rkctx->hw_regs);
++
++    av_freep(&rkctx->hw_regs);
++
++    ff_rkvpu_gem_free(rkctx->qp_table);
++    ff_rkvpu_gem_free(rkctx->bitstream);
++
++    av_buffer_pool_uninit(&rkctx->pool);
++
++    close(rkctx->fd);
++
++    return 0;
++}
+diff --git a/libavcodec/rkvpu.h b/libavcodec/rkvpu.h
+new file mode 100644
+index 0000000000..6dbd1f768b
+--- /dev/null
++++ b/libavcodec/rkvpu.h
+@@ -0,0 +1,69 @@
++/*
++ * This file is part of FFmpeg.
++ *
++ * FFmpeg is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU Lesser General Public
++ * License as published by the Free Software Foundation; either
++ * version 2.1 of the License, or (at your option) any later version.
++ *
++ * FFmpeg is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ * Lesser General Public License for more details.
++ *
++ * You should have received a copy of the GNU Lesser General Public
++ * License along with FFmpeg; if not, write to the Free Software
++ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
++ */
++
++#ifndef AVCODEC_RKVPU_H
++#define AVCODEC_RKVPU_H
++
++#include "config.h"
++
++#include "libavutil/hwcontext.h"
++#include "libavutil/hwcontext_drm.h"
++
++#include "avcodec.h"
++#include "internal.h"
++
++typedef struct RKGEMDescriptor {
++    AVDRMDeviceContext *hwctx;
++    uint32_t handle;
++    uint64_t size;
++    int fd;
++    uint64_t offset;
++    void *addr;
++    uint32_t format;
++    uint32_t width;
++    uint32_t height;
++} RKGEMDescriptor;
++
++typedef struct RKVPUContext {
++    AVDRMDeviceContext *hwctx;
++    int fd;
++    AVBufferPool *pool;
++    RKGEMDescriptor *bitstream;
++    RKGEMDescriptor *qp_table;
++    void *hw_regs;
++} RKVPUContext;
++
++int ff_rkvpu_set_hw_regs(AVCodecContext *avctx, void *hw_regs, int nb_regs);
++
++int ff_rkvpu_get_hw_regs(AVCodecContext *avctx, void *hw_regs, int nb_regs);
++
++int ff_rkvpu_gem_mmap(RKGEMDescriptor *gem);
++
++int ff_rkvpu_gem_munmap(RKGEMDescriptor *gem);
++
++void ff_rkvpu_gem_free(RKGEMDescriptor *gem);
++
++RKGEMDescriptor *ff_rkvpu_gem_alloc(AVDRMDeviceContext *hwctx, uint64_t size);
++
++int ff_rkvpu_common_frame_params(AVCodecContext *avctx, AVBufferRef *hw_frames_ctx);
++
++int ff_rkvpu_decode_init(AVCodecContext *avctx);
++
++int ff_rkvpu_decode_uninit(AVCodecContext *avctx);
++
++#endif /* AVCODEC_RKVPU_H */
+diff --git a/libavutil/hwcontext_drm.c b/libavutil/hwcontext_drm.c
+index 32cbde82eb..bf7773cf58 100644
+--- a/libavutil/hwcontext_drm.c
++++ b/libavutil/hwcontext_drm.c
+@@ -67,6 +67,17 @@ static int drm_device_create(AVHWDeviceContext *hwdev, const char *device,
+     return 0;
+ }
+ 
++static int drm_frames_init(AVHWFramesContext *hwfc)
++{
++    if (!hwfc->pool) {
++        hwfc->internal->pool_internal = av_buffer_pool_init(sizeof(AVDRMFrameDescriptor), av_buffer_allocz);
++        if (!hwfc->internal->pool_internal)
++            return AVERROR(ENOMEM);
++    }
++
++    return 0;
++}
++
+ static int drm_get_buffer(AVHWFramesContext *hwfc, AVFrame *frame)
+ {
+     frame->buf[0] = av_buffer_pool_get(hwfc->pool);
+@@ -275,6 +286,7 @@ const HWContextType ff_hwcontext_type_drm = {
+ 
+     .device_create          = &drm_device_create,
+ 
++    .frames_init            = &drm_frames_init,
+     .frames_get_buffer      = &drm_get_buffer,
+ 
+     .transfer_get_formats   = &drm_transfer_get_formats,
+
+From d91755832b217b5748005fa98766b0b2f930baac Mon Sep 17 00:00:00 2001
+From: Jonas Karlman <jonas@kwiboo.se>
+Date: Wed, 2 May 2018 20:42:18 +0200
+Subject: [PATCH] hwcontext_drm: debug logging
+
+---
+ libavutil/hwcontext_drm.c | 20 ++++++++++++++++++++
+ 1 file changed, 20 insertions(+)
+
+diff --git a/libavutil/hwcontext_drm.c b/libavutil/hwcontext_drm.c
+index bf7773cf58..53a1f69a3b 100644
+--- a/libavutil/hwcontext_drm.c
++++ b/libavutil/hwcontext_drm.c
+@@ -34,6 +34,8 @@ static void drm_device_free(AVHWDeviceContext *hwdev)
+ {
+     AVDRMDeviceContext *hwctx = hwdev->hwctx;
+ 
++    av_log(hwdev, AV_LOG_DEBUG, "%s: called\n", __func__);
++
+     close(hwctx->fd);
+ }
+ 
+@@ -43,6 +45,8 @@ static int drm_device_create(AVHWDeviceContext *hwdev, const char *device,
+     AVDRMDeviceContext *hwctx = hwdev->hwctx;
+     drmVersionPtr version;
+ 
++    av_log(hwdev, AV_LOG_DEBUG, "%s: called\n", __func__);
++
+     hwctx->fd = open(device, O_RDWR);
+     if (hwctx->fd < 0)
+         return AVERROR(errno);
+@@ -69,6 +73,8 @@ static int drm_device_create(AVHWDeviceContext *hwdev, const char *device,
+ 
+ static int drm_frames_init(AVHWFramesContext *hwfc)
+ {
++    av_log(hwfc, AV_LOG_DEBUG, "%s: called\n", __func__);
++
+     if (!hwfc->pool) {
+         hwfc->internal->pool_internal = av_buffer_pool_init(sizeof(AVDRMFrameDescriptor), av_buffer_allocz);
+         if (!hwfc->internal->pool_internal)
+@@ -80,6 +86,8 @@ static int drm_frames_init(AVHWFramesContext *hwfc)
+ 
+ static int drm_get_buffer(AVHWFramesContext *hwfc, AVFrame *frame)
+ {
++    av_log(hwfc, AV_LOG_DEBUG, "%s: called\n", __func__);
++
+     frame->buf[0] = av_buffer_pool_get(hwfc->pool);
+     if (!frame->buf[0])
+         return AVERROR(ENOMEM);
+@@ -106,6 +114,8 @@ static void drm_unmap_frame(AVHWFramesContext *hwfc,
+     DRMMapping *map = hwmap->priv;
+     int i;
+ 
++    av_log(hwfc, AV_LOG_DEBUG, "%s: called\n", __func__);
++
+     for (i = 0; i < map->nb_regions; i++)
+         munmap(map->address[i], map->length[i]);
+ 
+@@ -121,6 +131,8 @@ static int drm_map_frame(AVHWFramesContext *hwfc,
+     int mmap_prot;
+     void *addr;
+ 
++    av_log(hwfc, AV_LOG_DEBUG, "%s: called\n", __func__);
++
+     map = av_mallocz(sizeof(*map));
+     if (!map)
+         return AVERROR(ENOMEM);
+@@ -185,6 +197,8 @@ static int drm_transfer_get_formats(AVHWFramesContext *ctx,
+ {
+     enum AVPixelFormat *pix_fmts;
+ 
++    av_log(ctx, AV_LOG_DEBUG, "%s: called\n", __func__);
++
+     pix_fmts = av_malloc_array(2, sizeof(*pix_fmts));
+     if (!pix_fmts)
+         return AVERROR(ENOMEM);
+@@ -202,6 +216,8 @@ static int drm_transfer_data_from(AVHWFramesContext *hwfc,
+     AVFrame *map;
+     int err;
+ 
++    av_log(hwfc, AV_LOG_DEBUG, "%s: called\n", __func__);
++
+     if (dst->width > hwfc->width || dst->height > hwfc->height)
+         return AVERROR(EINVAL);
+ 
+@@ -233,6 +249,8 @@ static int drm_transfer_data_to(AVHWFramesContext *hwfc,
+     AVFrame *map;
+     int err;
+ 
++    av_log(hwfc, AV_LOG_DEBUG, "%s: called\n", __func__);
++
+     if (src->width > hwfc->width || src->height > hwfc->height)
+         return AVERROR(EINVAL);
+ 
+@@ -264,6 +282,8 @@ static int drm_map_from(AVHWFramesContext *hwfc, AVFrame *dst,
+ {
+     int err;
+ 
++    av_log(hwfc, AV_LOG_DEBUG, "%s: called\n", __func__);
++
+     if (hwfc->sw_format != dst->format)
+         return AVERROR(ENOSYS);
+ 
+
+From f33018c15cc5f7629aca17d658ecfed6e626107f Mon Sep 17 00:00:00 2001
+From: Jonas Karlman <jonas@kwiboo.se>
+Date: Wed, 2 May 2018 20:42:18 +0200
+Subject: [PATCH] rkvpu: mpeg2 hwaccel
+
+---
+ configure                |   2 +
+ libavcodec/Makefile      |   1 +
+ libavcodec/hwaccels.h    |   1 +
+ libavcodec/mpeg12dec.c   |   6 +
+ libavcodec/rkvpu_mpeg2.c | 524 +++++++++++++++++++++++++++++++++++++++
+ 5 files changed, 534 insertions(+)
+ create mode 100644 libavcodec/rkvpu_mpeg2.c
+
+diff --git a/configure b/configure
+index 33a284529d..f991799e7a 100755
+--- a/configure
++++ b/configure
+@@ -2821,6 +2821,8 @@ mpeg2_dxva2_hwaccel_deps="dxva2"
+ mpeg2_dxva2_hwaccel_select="mpeg2video_decoder"
+ mpeg2_nvdec_hwaccel_deps="nvdec"
+ mpeg2_nvdec_hwaccel_select="mpeg2video_decoder"
++mpeg2_rkvpu_hwaccel_deps="rkvpu"
++mpeg2_rkvpu_hwaccel_select="mpeg2video_decoder"
+ mpeg2_vaapi_hwaccel_deps="vaapi"
+ mpeg2_vaapi_hwaccel_select="mpeg2video_decoder"
+ mpeg2_vdpau_hwaccel_deps="vdpau"
+diff --git a/libavcodec/Makefile b/libavcodec/Makefile
+index 285b03b155..bb6be95743 100644
+--- a/libavcodec/Makefile
++++ b/libavcodec/Makefile
+@@ -871,6 +871,7 @@ OBJS-$(CONFIG_MPEG2_D3D11VA_HWACCEL)      += dxva2_mpeg2.o
+ OBJS-$(CONFIG_MPEG2_DXVA2_HWACCEL)        += dxva2_mpeg2.o
+ OBJS-$(CONFIG_MPEG2_NVDEC_HWACCEL)        += nvdec_mpeg12.o
+ OBJS-$(CONFIG_MPEG2_QSV_HWACCEL)          += qsvdec_other.o
++OBJS-$(CONFIG_MPEG2_RKVPU_HWACCEL)        += rkvpu_mpeg2.o
+ OBJS-$(CONFIG_MPEG2_VAAPI_HWACCEL)        += vaapi_mpeg2.o
+ OBJS-$(CONFIG_MPEG2_VDPAU_HWACCEL)        += vdpau_mpeg12.o
+ OBJS-$(CONFIG_MPEG2_VIDEOTOOLBOX_HWACCEL) += videotoolbox.o
+diff --git a/libavcodec/hwaccels.h b/libavcodec/hwaccels.h
+index 7d73da8676..6a2a06f0af 100644
+--- a/libavcodec/hwaccels.h
++++ b/libavcodec/hwaccels.h
+@@ -47,6 +47,7 @@ extern const AVHWAccel ff_mpeg2_d3d11va_hwaccel;
+ extern const AVHWAccel ff_mpeg2_d3d11va2_hwaccel;
+ extern const AVHWAccel ff_mpeg2_nvdec_hwaccel;
+ extern const AVHWAccel ff_mpeg2_dxva2_hwaccel;
++extern const AVHWAccel ff_mpeg2_rkvpu_hwaccel;
+ extern const AVHWAccel ff_mpeg2_vaapi_hwaccel;
+ extern const AVHWAccel ff_mpeg2_vdpau_hwaccel;
+ extern const AVHWAccel ff_mpeg2_videotoolbox_hwaccel;
+diff --git a/libavcodec/mpeg12dec.c b/libavcodec/mpeg12dec.c
+index 83e537884b..c71f77f189 100644
+--- a/libavcodec/mpeg12dec.c
++++ b/libavcodec/mpeg12dec.c
+@@ -1156,6 +1156,9 @@ static const enum AVPixelFormat mpeg2_hwaccel_pixfmt_list_420[] = {
+ #endif
+ #if CONFIG_MPEG2_VIDEOTOOLBOX_HWACCEL
+     AV_PIX_FMT_VIDEOTOOLBOX,
++#endif
++#if CONFIG_MPEG2_RKVPU_HWACCEL
++    AV_PIX_FMT_DRM_PRIME,
+ #endif
+     AV_PIX_FMT_YUV420P,
+     AV_PIX_FMT_NONE
+@@ -2930,6 +2933,9 @@ AVCodec ff_mpeg2video_decoder = {
+ #if CONFIG_MPEG2_NVDEC_HWACCEL
+                         HWACCEL_NVDEC(mpeg2),
+ #endif
++#if CONFIG_MPEG2_RKVPU_HWACCEL
++                        HWACCEL_RKVPU(mpeg2),
++#endif
+ #if CONFIG_MPEG2_VAAPI_HWACCEL
+                         HWACCEL_VAAPI(mpeg2),
+ #endif
+diff --git a/libavcodec/rkvpu_mpeg2.c b/libavcodec/rkvpu_mpeg2.c
+new file mode 100644
+index 0000000000..dd3898e6fb
+--- /dev/null
++++ b/libavcodec/rkvpu_mpeg2.c
+@@ -0,0 +1,524 @@
++/*
++ * This file is part of FFmpeg.
++ *
++ * FFmpeg is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU Lesser General Public
++ * License as published by the Free Software Foundation; either
++ * version 2.1 of the License, or (at your option) any later version.
++ *
++ * FFmpeg is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ * Lesser General Public License for more details.
++ *
++ * You should have received a copy of the GNU Lesser General Public
++ * License along with FFmpeg; if not, write to the Free Software
++ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
++ */
++
++#include "mpegutils.h"
++#include "mpegvideo.h"
++
++#include "rkvpu.h"
++
++typedef struct RKVPUHWRegsMPEG2 {
++    uint32_t      ppReg[50];
++
++    struct {
++        uint32_t  sw_dec_out_tiled_e  : 1;
++        uint32_t  sw_dec_latency      : 6;
++        uint32_t  sw_pic_fixed_quant  : 1;
++        uint32_t  sw_filtering_dis    : 1;
++        uint32_t  sw_skip_mode        : 1;
++        uint32_t  sw_dec_scmd_dis     : 1;
++        uint32_t  sw_dec_adv_pre_dis  : 1;
++        uint32_t  sw_priority_mode    : 1;
++        uint32_t  sw_refbu2_thr       : 12;
++        uint32_t  sw_refbu2_picid     : 5;
++        uint32_t  reserve0            : 2;
++    } config1;
++
++    struct {
++        uint32_t  sw_stream_len       : 24;
++        uint32_t  sw_stream_len_ext   : 1;
++        uint32_t  sw_init_qp          : 6;
++        uint32_t  reserve0            : 1;
++    } stream_buffinfo;
++
++    struct {
++        uint32_t  sw_startmb_y        : 8;
++        uint32_t  sw_startmb_x        : 9;
++        uint32_t  sw_apf_threshold    : 14;
++        uint32_t  reserve0            : 1;
++    } error_position;
++
++    uint32_t      sw_dec_mode;
++
++    struct {
++        uint32_t  sw_dec_in_endian    : 1;
++        uint32_t  sw_dec_out_endian   : 1;
++        uint32_t  sw_dec_inswap32_e   : 1;
++        uint32_t  sw_dec_outswap32_e  : 1;
++        uint32_t  sw_dec_strswap32_e  : 1;
++        uint32_t  sw_dec_strendian_e  : 1;
++        uint32_t  reserve0            : 26;
++    } config2;
++
++    struct {
++        uint32_t  sw_dec_irq          : 1;
++        uint32_t  sw_dec_irq_dis      : 1;
++        uint32_t  reserve0            : 2;
++        uint32_t  sw_dec_rdy_int      : 1;
++        uint32_t  sw_dec_bus_int      : 1;
++        uint32_t  sw_dec_buffer_int   : 1;
++        uint32_t  reserve1            : 1;
++        uint32_t  sw_dec_aso_int      : 1;
++        uint32_t  sw_dec_slice_int    : 1;
++        uint32_t  sw_dec_pic_inf      : 1;
++        uint32_t  reserve2            : 1;
++        uint32_t  sw_dec_error_int    : 1;
++        uint32_t  sw_dec_timeout      : 1;
++        uint32_t  reserve3            : 18;
++    } interrupt;
++
++    struct {
++        uint32_t  sw_dec_axi_rd_id    : 8;
++        uint32_t  sw_dec_axi_wr_id    : 8;
++        uint32_t  sw_dec_max_burst    : 5;
++        uint32_t  sw_paral_bus_e      : 1;
++        uint32_t  sw_dec_data_disc_e  : 1;
++        uint32_t  sw_axi_dec_sel      : 1;
++        uint32_t  reserve0            : 8;
++    } config3;
++
++    struct {
++        uint32_t  sw_dec_e            : 1;
++        uint32_t  sw_refbu2_buf_e     : 1;
++        uint32_t  sw_dec_out_dis      : 1;
++        uint32_t  reserve0            : 1;
++        uint32_t  sw_dec_clk_gate_e   : 1;
++        uint32_t  sw_dec_timeout_e    : 1;
++        uint32_t  sw_picord_count_e   : 1;
++        uint32_t  sw_seq_mbaff_e      : 1;
++        uint32_t  sw_reftopfirst_e    : 1;
++        uint32_t  sw_ref_topfield_e   : 1;
++        uint32_t  sw_write_mvs_e      : 1;
++        uint32_t  sw_sorenson_e       : 1;
++        uint32_t  sw_fwd_interlace_e  : 1;
++        uint32_t  sw_pic_topfield_e   : 1;
++        uint32_t  sw_pic_inter_e      : 1;
++        uint32_t  sw_pic_b_e          : 1;
++        uint32_t  sw_pic_fieldmode_e  : 1;
++        uint32_t  sw_pic_interlace_e  : 1;
++        uint32_t  sw_pjpeg_e          : 1;
++        uint32_t  sw_divx3_e          : 1;
++        uint32_t  sw_rlc_mode_e       : 1;
++        uint32_t  sw_ch_8pix_ileav_e  : 1;
++        uint32_t  sw_start_code_e     : 1;
++        uint32_t  reserve1            : 2;
++        uint32_t  sw_inter_dblspeed   : 1;
++        uint32_t  sw_intra_dblspeed   : 1;
++        uint32_t  sw_intra_dbl3t      : 1;
++        uint32_t  sw_pref_sigchan     : 1;
++        uint32_t  sw_cache_enable     : 1;
++        uint32_t  reserve2            : 1;
++        uint32_t  sw_dec_ahb_hlock_e  : 1;
++    } control;
++
++    uint32_t      soft_reset;
++    uint32_t      reserve0;
++
++    uint32_t      dec_ch8pix_base;
++    uint32_t      qtable_base;
++    uint32_t      dir_mv_base;
++    uint32_t      dec_out_base;
++    uint32_t      rlc_vlc_base;
++
++    struct {
++        uint32_t  sw_refbu_y_offset   : 9;
++        uint32_t  sw_reserve          : 3;
++        uint32_t  sw_refbu_fparmod_e  : 1;
++        uint32_t  sw_refbu_eval_e     : 1;
++        uint32_t  sw_refbu_picid      : 5;
++        uint32_t  sw_refbu_thr        : 12;
++        uint32_t  sw_refbu_e          : 1;
++    } refbuff_ctl;
++
++    struct {
++        uint32_t  build_version       : 3;
++        uint32_t  product_IDen        : 1;
++        uint32_t  minor_version       : 8;
++        uint32_t  major_version       : 4;
++        uint32_t  product_numer       : 16;
++    } id;
++
++    struct {
++        uint32_t  sw_reserve          : 25;
++        uint32_t  sw_dec_rtl_rom      : 1;
++        uint32_t  sw_dec_rv_prof      : 2;
++        uint32_t  sw_ref_buff2_exist  : 1;
++        uint32_t  sw_dec_divx_prof    : 1;
++        uint32_t  sw_dec_refbu_ilace  : 1;
++        uint32_t  sw_dec_jpeg_exten   : 1;
++    } syn_cfg;
++
++    struct {
++        uint32_t  sw_refbu_top_sum    : 16;
++        uint32_t  sw_refbu_bot_sum    : 16;
++    } refbuff_info3;
++
++    struct {
++        uint32_t  sw_refbu_intra_sum  : 16;
++        uint32_t  sw_refbu_hit_sum    : 16;
++    } refbuff_info1;
++
++    struct {
++        uint32_t  sw_refbu_y_mv_sum   : 22;
++        uint32_t  reserve0            : 10;
++    } refbuff_info2;
++
++    struct {
++        uint32_t  sw_dec_max_owidth   : 11;
++        uint32_t  sw_dec_soren_prof   : 1;
++        uint32_t  sw_dec_bus_width    : 2;
++        uint32_t  sw_dec_synth_lan    : 2;
++        uint32_t  sw_dec_bus_strd     : 4;
++        uint32_t  sw_ref_buff_exist   : 1;
++        uint32_t  sw_dec_obuff_leve   : 1;
++        uint32_t  sw_dec_pjpeg_exist  : 1;
++        uint32_t  sw_vp6_prof         : 1;
++        uint32_t  sw_dec_h264_prof    : 2;
++        uint32_t  sw_dec_mpeg4_prof   : 2;
++        uint32_t  sw_dec_jpeg_prof    : 1;
++        uint32_t  sw_dec_vc1_prof     : 2;
++        uint32_t  sw_dec_mpeg2_prof   : 1;
++    } syn_config;
++
++    uint32_t      reserve2;
++
++    struct {
++        uint32_t  debug_dec_mb_count  : 13;
++        uint32_t  debug_referreq1     : 1;
++        uint32_t  debug_referreq0     : 1;
++        uint32_t  debug_filter_req    : 1;
++        uint32_t  debug_framerdy      : 1;
++        uint32_t  debug_strm_da_e     : 1;
++        uint32_t  debug_res_c_req     : 1;
++        uint32_t  debug_res_y_req     : 1;
++        uint32_t  debug_rlc_req       : 1;
++        uint32_t  debug_mv_req        : 10;
++    } debug_info;
++
++    uint32_t      reserve3[46];
++
++    struct {
++        uint32_t  sw_ref_frames       : 5;
++        uint32_t  sw_topfieldfirst_e  : 1;
++        uint32_t  sw_alt_scan_e       : 1;
++        uint32_t  sw_mb_height_off    : 4;
++        uint32_t  sw_pic_mb_height_p  : 8;
++        uint32_t  sw_mb_width_off     : 4;
++        uint32_t  sw_pic_mb_width     : 9;
++    } pic_params;
++
++    uint32_t      reserve4;
++
++    struct {
++        uint32_t  sw_frame_pred_dct   : 1;
++        uint32_t  sw_intra_vlc_tab    : 1;
++        uint32_t  sw_intra_dc_prec    : 2;
++        uint32_t  sw_con_mv_e         : 1;
++        uint32_t  reserve0            : 19;
++        uint32_t  sw_qscale_type      : 1;
++        uint32_t  reserve1            : 1;
++        uint32_t  sw_stream_start_bit : 6;
++    } stream_bitinfo;
++
++    uint32_t      reserve5[8];
++    uint32_t      refer0_base;
++    uint32_t      reserve6[2];
++    uint32_t      refer2_base;
++    uint32_t      refer3_base;
++
++    struct {
++        uint32_t  reserve             : 1;
++        uint32_t  sw_mv_accuracy_bwd  : 1;
++        uint32_t  sw_mv_accuracy_fwd  : 1;
++        uint32_t  sw_fcode_bwd_ver    : 4;
++        uint32_t  sw_fcode_bwd_hor    : 4;
++        uint32_t  sw_fcode_fwd_ver    : 4;
++        uint32_t  sw_fcode_fwd_hor    : 4;
++        uint32_t  sw_alt_scan_flag_e  : 1;
++        uint32_t  reserve1            : 12;
++    } dec_info;
++
++    uint32_t      reserve7[11];
++    uint32_t      refer1_base;
++    uint32_t      reserve8[10];
++} RKVPUHWRegsMPEG2;
++
++typedef struct RKVPUPictureMPEG2 {
++    unsigned        slice_count;
++    const uint8_t   *bitstream;
++    unsigned        bitstream_size;
++} RKVPUPictureMPEG2;
++
++static int rkvpu_mpeg2_start_frame(AVCodecContext *avctx,
++                                  av_unused const uint8_t *buffer,
++                                  av_unused uint32_t size)
++{
++    RKVPUContext *rkctx = avctx->internal->hwaccel_priv_data;
++    const MpegEncContext *s = avctx->priv_data;
++    RKVPUPictureMPEG2 *pic = s->current_picture_ptr->hwaccel_picture_private;
++    AVDRMFrameDescriptor *desc;
++
++    av_log(avctx, AV_LOG_DEBUG, "%s: avctx=%p rkctx=%p pic=%p\n", __func__, avctx, rkctx, pic);
++
++    pic->slice_count = 0;
++    pic->bitstream_size = 0;
++    pic->bitstream = NULL;
++
++    desc = (AVDRMFrameDescriptor*)s->current_picture_ptr->f->data[0];
++    if (desc)
++        memset(desc, 0, sizeof(AVDRMFrameDescriptor));
++
++    if (!rkctx->bitstream) {
++        rkctx->bitstream = ff_rkvpu_gem_alloc(rkctx->hwctx, 2 * 1024 * 1024);
++        ff_rkvpu_gem_mmap(rkctx->bitstream);
++    }
++
++    if (!rkctx->qp_table) {
++        rkctx->qp_table = ff_rkvpu_gem_alloc(rkctx->hwctx, 4096);
++        ff_rkvpu_gem_mmap(rkctx->qp_table);
++    }
++
++    return 0;
++}
++
++static int rkvpu_mpeg2_decode_slice(AVCodecContext *avctx,
++                                   const uint8_t *buffer,
++                                   uint32_t size)
++{
++    const MpegEncContext *s = avctx->priv_data;
++    RKVPUPictureMPEG2 *pic = s->current_picture_ptr->hwaccel_picture_private;
++
++    av_log(avctx, AV_LOG_INFO, "%s: avctx=%p pic=%p slice_count=%u size=%u\n", __func__, avctx, pic, pic->slice_count, size);
++
++    if (!pic->bitstream)
++        pic->bitstream = buffer;
++    pic->bitstream_size += size;
++
++    pic->slice_count++;
++
++    return 0;
++}
++
++static int rkvpu_mpeg2_end_frame(AVCodecContext *avctx)
++{
++    RKVPUContext *rkctx = avctx->internal->hwaccel_priv_data;
++    RKVPUHWRegsMPEG2 *hw_regs = rkctx->hw_regs;
++    const MpegEncContext *s = avctx->priv_data;
++    RKVPUPictureMPEG2 *pic = s->current_picture_ptr->hwaccel_picture_private;
++    AVDRMFrameDescriptor *desc;
++    AVDRMLayerDescriptor *layer;
++    RKGEMDescriptor *gem, *last_picture_gem, *next_picture_gem;
++    uint8_t *qp_table;
++    int i;
++
++    av_log(avctx, AV_LOG_DEBUG, "%s: avctx=%p pic=%p slice_count=%u bitstream_size=%u\n", __func__, avctx, pic, pic->slice_count, pic->bitstream_size);
++
++    if (pic->slice_count <= 0 || pic->bitstream_size <= 0)
++        return -1;
++
++    desc = (AVDRMFrameDescriptor*)s->current_picture_ptr->f->data[0];
++    if (desc) {
++        RKVPUHWRegsMPEG2 hw_regs_out = {0};
++
++        s->current_picture_ptr->f->buf[1] = av_buffer_pool_get(rkctx->pool);
++        if (!s->current_picture_ptr->f->buf[1])
++            return AVERROR(ENOMEM);
++
++        s->current_picture_ptr->f->data[1] = (uint8_t*)s->current_picture_ptr->f->buf[1]->data;
++        gem = (RKGEMDescriptor*)s->current_picture_ptr->f->data[1];
++
++        av_log(avctx, AV_LOG_DEBUG, "%s: desc=%p gem=%p handle=%u fd=%d format=%u width=%u height=%u size=%"PRIu64"\n", __func__, desc, gem, gem->handle, gem->fd, gem->format, gem->width, gem->height, gem->size);
++
++        hw_regs->dec_info.sw_mv_accuracy_fwd = 1;
++        hw_regs->dec_info.sw_mv_accuracy_bwd = 1;
++        hw_regs->dec_info.sw_fcode_fwd_hor = s->mpeg_f_code[0][0];
++        hw_regs->dec_info.sw_fcode_fwd_ver = s->mpeg_f_code[0][1];
++        hw_regs->dec_info.sw_fcode_bwd_hor = s->mpeg_f_code[1][0];
++        hw_regs->dec_info.sw_fcode_bwd_ver = s->mpeg_f_code[1][1];
++
++        if (avctx->codec_id == AV_CODEC_ID_MPEG2VIDEO) {
++            hw_regs->sw_dec_mode = 5;
++        } else {
++            hw_regs->sw_dec_mode = 6;
++            if (s->full_pel[0])
++                hw_regs->dec_info.sw_mv_accuracy_fwd = 0;
++            if (s->full_pel[1])
++                hw_regs->dec_info.sw_mv_accuracy_bwd = 0;
++        }
++
++        hw_regs->pic_params.sw_pic_mb_width = s->mb_width;
++        hw_regs->pic_params.sw_pic_mb_height_p = s->mb_height;
++        hw_regs->control.sw_pic_interlace_e = 1 - s->progressive_sequence;
++
++        hw_regs->control.sw_pic_fieldmode_e = (s->picture_structure != PICT_FRAME);
++        hw_regs->control.sw_pic_topfield_e = (s->picture_structure == PICT_TOP_FIELD);
++        hw_regs->control.sw_pic_b_e = (s->pict_type == AV_PICTURE_TYPE_B);
++        hw_regs->control.sw_pic_inter_e = (s->pict_type != AV_PICTURE_TYPE_I);
++
++        hw_regs->pic_params.sw_topfieldfirst_e = s->top_field_first;
++        hw_regs->control.sw_fwd_interlace_e = 0;
++        hw_regs->control.sw_write_mvs_e = 0;
++        hw_regs->pic_params.sw_alt_scan_e = s->alternate_scan;
++        hw_regs->dec_info.sw_alt_scan_flag_e = s->alternate_scan;
++
++        hw_regs->stream_bitinfo.sw_qscale_type = s->q_scale_type;
++        hw_regs->stream_bitinfo.sw_intra_dc_prec = s->intra_dc_precision;
++        hw_regs->stream_bitinfo.sw_con_mv_e = s->concealment_motion_vectors;
++        hw_regs->stream_bitinfo.sw_intra_vlc_tab = s->intra_vlc_format;
++        hw_regs->stream_bitinfo.sw_frame_pred_dct = s->frame_pred_frame_dct;
++        hw_regs->stream_buffinfo.sw_init_qp = 1;
++
++        hw_regs->error_position.sw_startmb_x = 0;
++        hw_regs->error_position.sw_startmb_y = 0;
++        hw_regs->control.sw_dec_out_dis = 0;
++        hw_regs->config1.sw_filtering_dis = 1;
++
++        memcpy(rkctx->bitstream->addr, pic->bitstream, pic->bitstream_size);
++
++        qp_table = (uint8_t*)rkctx->qp_table->addr;
++        for (i = 0; i < 64; i++) {
++            qp_table[i + 0] = (uint8_t)s->intra_matrix[i];
++            qp_table[i + 64] = (uint8_t)s->inter_matrix[i];
++            qp_table[i + 128] = (uint8_t)s->chroma_intra_matrix[i];
++            qp_table[i + 192] = (uint8_t)s->chroma_inter_matrix[i];
++        }
++
++        hw_regs->rlc_vlc_base = rkctx->bitstream->fd;
++        hw_regs->qtable_base = rkctx->qp_table->fd;
++
++        if (s->picture_structure == PICT_TOP_FIELD || s->picture_structure == PICT_FRAME) {
++            hw_regs->dec_out_base = gem->fd;
++        } else {
++            hw_regs->dec_out_base = gem->fd | (s->mb_width << 14);
++        }
++
++        last_picture_gem = (RKGEMDescriptor*)s->last_picture.f->data[1];
++        if (!last_picture_gem)
++            last_picture_gem = gem;
++
++        if (s->pict_type == AV_PICTURE_TYPE_B) {
++            next_picture_gem = (RKGEMDescriptor*)s->next_picture.f->data[1];
++            if (!next_picture_gem)
++                next_picture_gem = last_picture_gem;
++
++            hw_regs->refer0_base = last_picture_gem->fd;
++            hw_regs->refer1_base = last_picture_gem->fd;
++            hw_regs->refer2_base = next_picture_gem->fd;
++            hw_regs->refer3_base = next_picture_gem->fd;
++        } else {
++            if (s->picture_structure == PICT_FRAME ||
++               (s->picture_structure == PICT_TOP_FIELD && s->top_field_first) ||
++               (s->picture_structure == PICT_BOTTOM_FIELD && !s->top_field_first)) {
++                hw_regs->refer0_base = last_picture_gem->fd;
++                hw_regs->refer1_base = last_picture_gem->fd;
++            } else if (s->picture_structure == PICT_TOP_FIELD) {
++                hw_regs->refer0_base = last_picture_gem->fd;
++                hw_regs->refer1_base = gem->fd;
++            } else if (s->picture_structure == PICT_BOTTOM_FIELD) {
++                hw_regs->refer0_base = gem->fd;
++                hw_regs->refer1_base = last_picture_gem->fd;
++            }
++            hw_regs->refer2_base = gem->fd;
++            hw_regs->refer3_base = gem->fd;
++        }
++
++        hw_regs->stream_buffinfo.sw_stream_len = pic->bitstream_size;
++        hw_regs->stream_bitinfo.sw_stream_start_bit = 0;
++        hw_regs->control.sw_dec_e = 1;
++
++        ff_rkvpu_set_hw_regs(avctx, hw_regs, 159);
++        ff_rkvpu_get_hw_regs(avctx, &hw_regs_out, 159);
++
++        // TODO: check for errors
++        av_log(avctx, AV_LOG_DEBUG, "%s: sw_dec_error_int=%d sw_dec_buffer_int=%d\n", __func__, hw_regs_out.interrupt.sw_dec_error_int, hw_regs_out.interrupt.sw_dec_buffer_int);
++
++        desc->nb_objects = 1;
++        desc->objects[0].fd = gem->fd;
++        desc->objects[0].size = gem->size;
++
++        desc->nb_layers = 1;
++        layer = &desc->layers[0];
++        layer->format = gem->format;
++        layer->nb_planes = 2;
++
++        layer->planes[0].object_index = 0;
++        layer->planes[0].offset = 0;
++        layer->planes[0].pitch = gem->width;
++
++        layer->planes[1].object_index = 0;
++        layer->planes[1].offset = layer->planes[0].pitch * gem->height;
++        layer->planes[1].pitch = layer->planes[0].pitch;
++    }
++
++    return 0;
++}
++
++static int rkvpu_mpeg2_init(AVCodecContext *avctx)
++{
++    RKVPUContext *rkctx = avctx->internal->hwaccel_priv_data;
++    RKVPUHWRegsMPEG2 *hw_regs;
++
++    av_log(avctx, AV_LOG_DEBUG, "%s: avctx=%p rkctx=%p\n", __func__, avctx, rkctx);
++
++    hw_regs = av_mallocz(sizeof(RKVPUHWRegsMPEG2));
++    if (!hw_regs)
++        return AVERROR(ENOMEM);
++
++    hw_regs->control.sw_dec_timeout_e = 1;
++    hw_regs->config2.sw_dec_strswap32_e = 1;
++    hw_regs->config2.sw_dec_strendian_e = 1;
++    hw_regs->config2.sw_dec_inswap32_e = 1;
++    hw_regs->config2.sw_dec_outswap32_e = 1;
++
++    hw_regs->control.sw_dec_clk_gate_e = 1;
++    hw_regs->config2.sw_dec_in_endian = 1;
++    hw_regs->config2.sw_dec_out_endian = 1;
++
++    hw_regs->config1.sw_dec_out_tiled_e = 0;
++    hw_regs->config3.sw_dec_max_burst = 16;
++    hw_regs->config1.sw_dec_scmd_dis = 0;
++    hw_regs->config1.sw_dec_adv_pre_dis = 0;
++    hw_regs->error_position.sw_apf_threshold = 8;
++
++    hw_regs->config1.sw_dec_latency = 0;
++    hw_regs->config3.sw_dec_data_disc_e = 0;
++
++    hw_regs->interrupt.sw_dec_irq = 0;
++    hw_regs->config3.sw_dec_axi_rd_id = 0;
++    hw_regs->config3.sw_dec_axi_wr_id = 0;
++
++    hw_regs->sw_dec_mode = 8;
++
++    rkctx->hw_regs = hw_regs;
++
++    return ff_rkvpu_decode_init(avctx);
++}
++
++const AVHWAccel ff_mpeg2_rkvpu_hwaccel = {
++    .name           = "mpeg2_rkvpu",
++    .type           = AVMEDIA_TYPE_VIDEO,
++    .id             = AV_CODEC_ID_MPEG2VIDEO,
++    .pix_fmt        = AV_PIX_FMT_DRM_PRIME,
++    .init           = &rkvpu_mpeg2_init,
++    .uninit         = ff_rkvpu_decode_uninit,
++    .start_frame    = &rkvpu_mpeg2_start_frame,
++    .decode_slice   = &rkvpu_mpeg2_decode_slice,
++    .end_frame      = &rkvpu_mpeg2_end_frame,
++    .frame_params   = ff_rkvpu_common_frame_params,
++    .frame_priv_data_size = sizeof(RKVPUPictureMPEG2),
++    .priv_data_size = sizeof(RKVPUContext),
++};
