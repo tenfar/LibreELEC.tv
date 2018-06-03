@@ -76,7 +76,6 @@ makeinstall_target() {
       cp -PRv include/GLES3 $SYSROOT_PREFIX/usr/include
     fi
     cp -PRv include/KHR $SYSROOT_PREFIX/usr/include
-    cp -PRv include/gbm.h $SYSROOT_PREFIX/usr/include
 
   mkdir -p $SYSROOT_PREFIX/usr/lib/pkgconfig
     cp -PRv $PKG_DIR/pkgconfig/*.pc $SYSROOT_PREFIX/usr/lib/pkgconfig
@@ -90,7 +89,6 @@ makeinstall_target() {
     ln -sfv libmali.so $SYSROOT_PREFIX/usr/lib/libMali.so
     ln -sfv libmali.so $SYSROOT_PREFIX/usr/lib/libEGL.so
     ln -sfv libmali.so $SYSROOT_PREFIX/usr/lib/libGLESv2.so
-    ln -sfv libmali.so $SYSROOT_PREFIX/usr/lib/libgbm.so
 
   mkdir -p $INSTALL/usr/lib
     cp -PRv lib/$PKG_MALI_ARCH/$PKG_MALI_FILE $INSTALL/usr/lib
@@ -100,5 +98,4 @@ makeinstall_target() {
     ln -sfv libmali.so $INSTALL/usr/lib/libEGL.so.1
     ln -sfv libmali.so $INSTALL/usr/lib/libGLESv2.so
     ln -sfv libmali.so $INSTALL/usr/lib/libGLESv2.so.2
-    ln -sfv libmali.so $INSTALL/usr/lib/libgbm.so
 }
