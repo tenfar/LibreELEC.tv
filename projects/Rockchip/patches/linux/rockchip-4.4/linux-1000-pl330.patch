@@ -1,4 +1,222 @@
-From 1ed55271b88f5055f501d4c83e1702b38760ccdf Mon Sep 17 00:00:00 2001
+From a13d2cc9da83a325be7a79098967f6eea23b7a57 Mon Sep 17 00:00:00 2001
+From: Jonas Karlman <jonas@kwiboo.se>
+Date: Sun, 3 Jun 2018 07:36:35 +0200
+Subject: [PATCH] Revert "dmaengine: pl330: add support for interlace cyclic
+ xfer"
+
+This reverts commit 191583d95bae59c82b50f7437f2b738fcc5f8015.
+---
+ drivers/dma/pl330.c | 21 ++++++++++++---------
+ 1 file changed, 12 insertions(+), 9 deletions(-)
+
+diff --git a/drivers/dma/pl330.c b/drivers/dma/pl330.c
+index 6fe0b1a15671..cc4623448b1c 100644
+--- a/drivers/dma/pl330.c
++++ b/drivers/dma/pl330.c
+@@ -1394,9 +1394,7 @@ static inline int _loop_cyclic(struct pl330_dmac *pl330, unsigned dry_run,
+ 		off += _emit_LPEND(dry_run, &buf[off], &lpend);
+ 	}
+ 
+-	if (pxs->desc->src_interlace_size == 0 &&
+-	    pxs->desc->dst_interlace_size == 0 &&
+-	    pl330->peripherals_req_type == BURST) {
++	if (pl330->peripherals_req_type == BURST) {
+ 		unsigned int ccr = pxs->ccr;
+ 		unsigned long c = 0;
+ 
+@@ -1497,12 +1495,6 @@ static inline int _setup_xfer_cyclic(struct pl330_dmac *pl330, unsigned dry_run,
+ 	unsigned long bursts = BYTE_TO_BURST(x->bytes, ccr);
+ 	int off = 0;
+ 
+-	if (pxs->desc->rqtype == DMA_DEV_TO_MEM)
+-		bursts = x->bytes / (BRST_SIZE(ccr) * BRST_LEN(ccr)
+-			+ pxs->desc->dst_interlace_size);
+-	else if (pxs->desc->rqtype == DMA_MEM_TO_DEV)
+-		bursts = x->bytes / (BRST_SIZE(ccr) * BRST_LEN(ccr)
+-			+ pxs->desc->src_interlace_size);
+ 	/* Setup Loop(s) */
+ 	off += _loop_cyclic(pl330, dry_run, &buf[off], bursts, pxs, ev);
+ 
+@@ -2723,6 +2715,7 @@ static struct dma_async_tx_descriptor *pl330_prep_dma_cyclic(
+ 	struct dma_pl330_desc *desc = NULL;
+ 	struct dma_pl330_chan *pch = to_pchan(chan);
+ 	struct pl330_dmac *pl330 = pch->dmac;
++	unsigned int size = 0;
+ 	dma_addr_t dst;
+ 	dma_addr_t src;
+ 
+@@ -2748,12 +2741,14 @@ static struct dma_async_tx_descriptor *pl330_prep_dma_cyclic(
+ 		desc->rqcfg.dst_inc = 0;
+ 		src = dma_addr;
+ 		dst = pch->fifo_addr;
++		size = pch->src_interlace_size;
+ 		break;
+ 	case DMA_DEV_TO_MEM:
+ 		desc->rqcfg.src_inc = 0;
+ 		desc->rqcfg.dst_inc = 1;
+ 		src = pch->fifo_addr;
+ 		dst = dma_addr;
++		size = pch->dst_interlace_size;
+ 		break;
+ 	default:
+ 		break;
+@@ -2773,8 +2768,16 @@ static struct dma_async_tx_descriptor *pl330_prep_dma_cyclic(
+ 	desc->cyclic = true;
+ 	desc->num_periods = len / period_len;
+ 	desc->txd.flags = flags;
++
+ 	desc->src_interlace_size = pch->src_interlace_size;
+ 	desc->dst_interlace_size = pch->dst_interlace_size;
++	/* refine bytes_requested if interlace_size set */
++	if (size) {
++		size += (pch->burst_len * (1 << pch->burst_sz));
++		size *= desc->bytes_requested;
++		size /= (pch->burst_len * (1 << pch->burst_sz));
++		desc->bytes_requested = size;
++	}
+ 	return &desc->txd;
+ }
+ 
+
+From 79c44c06061382a8fde32024594e2af8eb9ea90a Mon Sep 17 00:00:00 2001
+From: Jonas Karlman <jonas@kwiboo.se>
+Date: Sun, 3 Jun 2018 07:36:53 +0200
+Subject: [PATCH] Revert "dmaengine: pl330: add support for interlace size
+ config"
+
+This reverts commit ddd2e87ad41e2c9e95322a1fb7d8ca65e578aa65.
+---
+ drivers/dma/pl330.c       | 32 --------------------------------
+ include/linux/dmaengine.h |  2 --
+ 2 files changed, 34 deletions(-)
+
+diff --git a/drivers/dma/pl330.c b/drivers/dma/pl330.c
+index cc4623448b1c..08179f5d0428 100644
+--- a/drivers/dma/pl330.c
++++ b/drivers/dma/pl330.c
+@@ -447,10 +447,6 @@ struct dma_pl330_chan {
+ 	int burst_len; /* the number of burst */
+ 	dma_addr_t fifo_addr;
+ 
+-	/* interlace size */
+-	unsigned int src_interlace_size;
+-	unsigned int dst_interlace_size;
+-
+ 	/* for runtime pm tracking */
+ 	bool active;
+ };
+@@ -540,9 +536,6 @@ struct dma_pl330_desc {
+ 	/* For cyclic capability */
+ 	bool cyclic;
+ 	size_t num_periods;
+-	/* interlace size */
+-	unsigned int src_interlace_size;
+-	unsigned int dst_interlace_size;
+ };
+ 
+ struct _xfer_spec {
+@@ -1190,10 +1183,6 @@ static inline int _ldst_devtomem(struct pl330_dmac *pl330, unsigned dry_run,
+ 		if (!(pl330->quirks & PL330_QUIRK_BROKEN_NO_FLUSHP))
+ 			off += _emit_FLUSHP(dry_run, &buf[off],
+ 					    pxs->desc->peri);
+-		if (pxs->desc->dst_interlace_size) {
+-			off += _emit_ADDH(dry_run, &buf[off], DST,
+-					  pxs->desc->dst_interlace_size);
+-		}
+ 	}
+ 
+ 	return off;
+@@ -1224,9 +1213,6 @@ static inline int _ldst_memtodev(struct pl330_dmac *pl330,
+ 		if (!(pl330->quirks & PL330_QUIRK_BROKEN_NO_FLUSHP))
+ 			off += _emit_FLUSHP(dry_run, &buf[off],
+ 					    pxs->desc->peri);
+-		if (pxs->desc->src_interlace_size)
+-			off += _emit_ADDH(dry_run, &buf[off], SRC,
+-					  pxs->desc->src_interlace_size);
+ 	}
+ 
+ 	return off;
+@@ -2312,8 +2298,6 @@ static int pl330_config(struct dma_chan *chan,
+ 			pch->burst_sz = __ffs(slave_config->dst_addr_width);
+ 		if (slave_config->dst_maxburst)
+ 			pch->burst_len = slave_config->dst_maxburst;
+-		if (slave_config->src_interlace_size)
+-			pch->src_interlace_size = slave_config->src_interlace_size;
+ 	} else if (slave_config->direction == DMA_DEV_TO_MEM) {
+ 		if (slave_config->src_addr)
+ 			pch->fifo_addr = slave_config->src_addr;
+@@ -2321,8 +2305,6 @@ static int pl330_config(struct dma_chan *chan,
+ 			pch->burst_sz = __ffs(slave_config->src_addr_width);
+ 		if (slave_config->src_maxburst)
+ 			pch->burst_len = slave_config->src_maxburst;
+-		if (slave_config->dst_interlace_size)
+-			pch->dst_interlace_size = slave_config->dst_interlace_size;
+ 	}
+ 
+ 	return 0;
+@@ -2715,7 +2697,6 @@ static struct dma_async_tx_descriptor *pl330_prep_dma_cyclic(
+ 	struct dma_pl330_desc *desc = NULL;
+ 	struct dma_pl330_chan *pch = to_pchan(chan);
+ 	struct pl330_dmac *pl330 = pch->dmac;
+-	unsigned int size = 0;
+ 	dma_addr_t dst;
+ 	dma_addr_t src;
+ 
+@@ -2741,14 +2722,12 @@ static struct dma_async_tx_descriptor *pl330_prep_dma_cyclic(
+ 		desc->rqcfg.dst_inc = 0;
+ 		src = dma_addr;
+ 		dst = pch->fifo_addr;
+-		size = pch->src_interlace_size;
+ 		break;
+ 	case DMA_DEV_TO_MEM:
+ 		desc->rqcfg.src_inc = 0;
+ 		desc->rqcfg.dst_inc = 1;
+ 		src = pch->fifo_addr;
+ 		dst = dma_addr;
+-		size = pch->dst_interlace_size;
+ 		break;
+ 	default:
+ 		break;
+@@ -2769,15 +2748,6 @@ static struct dma_async_tx_descriptor *pl330_prep_dma_cyclic(
+ 	desc->num_periods = len / period_len;
+ 	desc->txd.flags = flags;
+ 
+-	desc->src_interlace_size = pch->src_interlace_size;
+-	desc->dst_interlace_size = pch->dst_interlace_size;
+-	/* refine bytes_requested if interlace_size set */
+-	if (size) {
+-		size += (pch->burst_len * (1 << pch->burst_sz));
+-		size *= desc->bytes_requested;
+-		size /= (pch->burst_len * (1 << pch->burst_sz));
+-		desc->bytes_requested = size;
+-	}
+ 	return &desc->txd;
+ }
+ 
+@@ -2914,8 +2884,6 @@ pl330_prep_slave_sg(struct dma_chan *chan, struct scatterlist *sgl,
+ 
+ 		desc->rqtype = direction;
+ 		desc->bytes_requested = sg_dma_len(sg);
+-		desc->src_interlace_size = pch->src_interlace_size;
+-		desc->dst_interlace_size = pch->dst_interlace_size;
+ 	}
+ 
+ 	/* Return the last desc in the chain */
+diff --git a/include/linux/dmaengine.h b/include/linux/dmaengine.h
+index 59c5d73758d6..3080b4e22a49 100644
+--- a/include/linux/dmaengine.h
++++ b/include/linux/dmaengine.h
+@@ -365,8 +365,6 @@ struct dma_slave_config {
+ 	u32 dst_maxburst;
+ 	bool device_fc;
+ 	unsigned int slave_id;
+-	unsigned int src_interlace_size;
+-	unsigned int dst_interlace_size;
+ };
+ 
+ /**
+
+From 7446f9d45162310568f1a3921172b82187fa8453 Mon Sep 17 00:00:00 2001
 From: Jonas Karlman <jonas@kwiboo.se>
 Date: Sun, 4 Feb 2018 10:47:28 +0100
 Subject: [PATCH] Revert "dmaengine: pl330: fix bug that chan descdone is null"
@@ -39,7 +257,7 @@ index 08179f5d0428..766ab72d119e 100644
  	}
  
 
-From 43f2eb7bd8a74147c2d9fe37d98df41c4973db63 Mon Sep 17 00:00:00 2001
+From 0c8341b0e62ce2751b61486d6376781edb6ae096 Mon Sep 17 00:00:00 2001
 From: Jonas Karlman <jonas@kwiboo.se>
 Date: Sun, 4 Feb 2018 10:47:38 +0100
 Subject: [PATCH] Revert "dmaengine: pl330: flush before first loop"
@@ -80,7 +298,7 @@ index 766ab72d119e..055e3cd8832c 100644
  		c = bursts;
  		off += _loop(pl330, dry_run, &buf[off], &c, pxs);
 
-From 1bea0136096ba90fb53c056f3ce3422086361a02 Mon Sep 17 00:00:00 2001
+From 4d5cc2df2917ffe4462b1b0686b990353d96beb6 Mon Sep 17 00:00:00 2001
 From: Jonas Karlman <jonas@kwiboo.se>
 Date: Sun, 4 Feb 2018 10:47:51 +0100
 Subject: [PATCH] Revert "dmaengine: pl330: fix 2 bursts transfer when dma
@@ -130,7 +348,7 @@ index 055e3cd8832c..ce52aa411c0b 100644
  		if (!(pl330->quirks & PL330_QUIRK_BROKEN_NO_FLUSHP))
  			off += _emit_FLUSHP(dry_run, &buf[off],
 
-From b234afcd6b84fedb81f0cb14dc0002b3cefe0296 Mon Sep 17 00:00:00 2001
+From 220524211841b9ce47b8f17051682fed4f0f8a2d Mon Sep 17 00:00:00 2001
 From: Jonas Karlman <jonas@kwiboo.se>
 Date: Sat, 21 Oct 2017 19:49:27 +0200
 Subject: [PATCH] Revert "dmaengine: pl330: _loop_cyclic fix cycles of last
@@ -155,7 +373,7 @@ index ce52aa411c0b..9fbd8d863774 100644
  			off += _bursts(pl330, dry_run, &buf[off], pxs, 1);
  			lpend.cond = ALWAYS;
 
-From a7c635636d588f97e1e9a22313029843a3f8b486 Mon Sep 17 00:00:00 2001
+From e5ca2f7095bb635e984bdb1d73df53b8f1c852f1 Mon Sep 17 00:00:00 2001
 From: Jonas Karlman <jonas@kwiboo.se>
 Date: Sun, 4 Feb 2018 11:05:44 +0100
 Subject: [PATCH] Revert "dmaengine: pl330: pl330_tasklet init power_down by
@@ -180,7 +398,7 @@ index 9fbd8d863774..359475bbe89f 100644
  	} else {
  		/* Make sure the PL330 Channel thread is active */
 
-From 50f85fa5c566c0d706ca264fa9327bc360255639 Mon Sep 17 00:00:00 2001
+From d1c8e7fe69cff573f6d6f64bcf3dfe2e039a6b19 Mon Sep 17 00:00:00 2001
 From: Jonas Karlman <jonas@kwiboo.se>
 Date: Fri, 16 Jun 2017 23:14:54 +0200
 Subject: [PATCH] Revert "dmaengine: pl330: _loop_cyclic supports unaligned
@@ -256,7 +474,7 @@ index 359475bbe89f..3fa6a7e474de 100644
  						pxs, thrd->ev);
  	}
 
-From f511e38f0d47ec8f8cd4db8f05fae8d496cec3a1 Mon Sep 17 00:00:00 2001
+From d2df5430d858138ded3052af521079d9cfe6168f Mon Sep 17 00:00:00 2001
 From: Jonas Karlman <jonas@kwiboo.se>
 Date: Fri, 16 Jun 2017 23:14:54 +0200
 Subject: [PATCH] Revert "dmaengine: pl330: redefine the cyclic transfer"
@@ -471,7 +689,7 @@ index 3fa6a7e474de..0452a189d7fd 100644
  	fill_px(&desc->px, dst, src, period_len);
  
 
-From 682a7f71bd308635045e9d49cbabb31002429d3f Mon Sep 17 00:00:00 2001
+From a35e4a0958af910fa2d45dd2c8d8bd6d11920b91 Mon Sep 17 00:00:00 2001
 From: Jonas Karlman <jonas@kwiboo.se>
 Date: Fri, 16 Jun 2017 23:14:54 +0200
 Subject: [PATCH] Revert "dmaengine: pl330: make transfer run infinitely
@@ -814,7 +1032,7 @@ index 0452a189d7fd..47c2e67f0296 100644
  
  	return &desc->txd;
 
-From bf7ad151876459f44d29cb8949a95b69b2f3c3db Mon Sep 17 00:00:00 2001
+From 9d3d4c53a8e06122220f8e105c2b08bdd4ec3e09 Mon Sep 17 00:00:00 2001
 From: Jonas Karlman <jonas@kwiboo.se>
 Date: Fri, 16 Jun 2017 23:14:55 +0200
 Subject: [PATCH] Revert "dmaengine: pl330: support transfer that doesn't align
@@ -874,7 +1092,7 @@ index 47c2e67f0296..b5cf3fe9e9c3 100644
  	off += _setup_xfer(pl330, dry_run, &buf[off], pxs);
  
 
-From 782768f2aa48a7ec4ef509936a2ff46f481d3d3c Mon Sep 17 00:00:00 2001
+From 220c602bef7975c4a693c3339218056c27133e5b Mon Sep 17 00:00:00 2001
 From: Jonas Karlman <jonas@kwiboo.se>
 Date: Fri, 16 Jun 2017 23:14:55 +0200
 Subject: [PATCH] Revert "dmaengine: pl330: add burst mode according to dts
@@ -975,7 +1193,7 @@ index b5cf3fe9e9c3..131763534a39 100644
  	for (i = 0; i < ARRAY_SIZE(of_quirks); i++)
  		if (of_property_read_bool(np, of_quirks[i].quirk))
 
-From a715ea1481fee1d4be239873f89c38a95cddc7cc Mon Sep 17 00:00:00 2001
+From 6137f7e6264ef44c1bc5a9a7bbce8a086f153e7a Mon Sep 17 00:00:00 2001
 From: Vinod Koul <vinod.koul@intel.com>
 Date: Tue, 5 Jul 2016 10:02:16 +0530
 Subject: [PATCH] UPSTREAM: dmaengine: pl330: explicitly freeup irq
@@ -1018,7 +1236,7 @@ index 131763534a39..5b4a419673fc 100644
  
  	/* Idle the DMAC */
 
-From 5dd1aed3e2ad901aa4b3be9db31e1b2e7b270b45 Mon Sep 17 00:00:00 2001
+From 03fa8d7c62365b519fcdbc8444d78ae1afdbcad0 Mon Sep 17 00:00:00 2001
 From: Stephen Barber <smbarber@chromium.org>
 Date: Thu, 18 Aug 2016 17:59:59 -0700
 Subject: [PATCH] UPSTREAM: dmaengine: pl330: fix residual for non-running BUSY
@@ -1078,7 +1296,7 @@ index 5b4a419673fc..aab5abab5a10 100644
  			transferred = 0;
  		residual += desc->bytes_requested - transferred;
 
-From e2ae4ead3868a8aad8b87dcc8523e392302bc77a Mon Sep 17 00:00:00 2001
+From 90618a304fa4304b15606a10b1a4a966ea805383 Mon Sep 17 00:00:00 2001
 From: Hsin-Yu Chao <hychao@chromium.org>
 Date: Tue, 23 Aug 2016 17:16:55 +0800
 Subject: [PATCH] UPSTREAM: dmaengine: pl330: Acquire dmac's spinlock in
@@ -1123,7 +1341,7 @@ index aab5abab5a10..1741cfbe311e 100644
  
  out:
 
-From fc4fc3aa1348b018e072526781991bc837113436 Mon Sep 17 00:00:00 2001
+From d474c1f8454328c265c486b152244ecba199126d Mon Sep 17 00:00:00 2001
 From: Stephen Barber <smbarber@chromium.org>
 Date: Tue, 1 Nov 2016 16:44:27 -0700
 Subject: [PATCH] UPSTREAM: dmaengine: pl330: Handle xferred count if DMAMOV
@@ -1158,7 +1376,7 @@ index 1741cfbe311e..dd58cf886fa0 100644
  }
  
 
-From d5ad98021dc2135d0d5df3fbca7f74b97d1341af Mon Sep 17 00:00:00 2001
+From 0ecc3ab0bacd7bcdfbe6145ded913f4d67d864c7 Mon Sep 17 00:00:00 2001
 From: Vladimir Murzin <vladimir.murzin@arm.com>
 Date: Wed, 7 Dec 2016 13:17:40 +0000
 Subject: [PATCH] UPSTREAM: dmaengine: pl330: do not generate unaligned access
@@ -1260,7 +1478,7 @@ index dd58cf886fa0..50a5f8e1e371 100644
  	return SZ_DMAGO;
  }
 
-From 8c88ea42d57ce47924c1fc8524a61ef96f8bba51 Mon Sep 17 00:00:00 2001
+From 3be4d9bb89733965296a632b055960885898be2b Mon Sep 17 00:00:00 2001
 From: Vinod Koul <vinod.koul@intel.com>
 Date: Fri, 9 Dec 2016 15:24:12 +0530
 Subject: [PATCH] =?UTF-8?q?UPSTREAM:=20dmaengine:=20pl330:=20remove=20unus?=
@@ -1301,39 +1519,7 @@ index 50a5f8e1e371..c725ceb4644d 100644
  	if ((pl330->pcfg.periph_id & 0xfffff) != PERIPH_ID_VAL) {
  		dev_err(pl330->ddma.dev, "PERIPH_ID 0x%x !\n",
 
-From 7b131091273ee28bfa40e16b13f24fed7880abcb Mon Sep 17 00:00:00 2001
-From: Jean-Philippe Brucker <jean-philippe.brucker@arm.com>
-Date: Thu, 1 Jun 2017 19:22:01 +0100
-Subject: [PATCH] UPSTREAM: dmaengine: pl330: fix warning in pl330_remove
-
-When removing a device with less than 9 IRQs (AMBA_NR_IRQS), we'll get a
-big WARN_ON from devres.c because pl330_remove calls devm_free_irqs for
-unallocated irqs. Similarly to pl330_probe, check that IRQ number is
-present before calling devm_free_irq.
-
-Signed-off-by: Jean-Philippe Brucker <jean-philippe.brucker@arm.com>
-Signed-off-by: Vinod Koul <vinod.koul@intel.com>
-(cherry picked from commit ebcdaee4cebb3a8d0d702ab5e9392373672ec1de)
----
- drivers/dma/pl330.c | 3 ++-
- 1 file changed, 2 insertions(+), 1 deletion(-)
-
-diff --git a/drivers/dma/pl330.c b/drivers/dma/pl330.c
-index c725ceb4644d..73eaf78871f1 100644
---- a/drivers/dma/pl330.c
-+++ b/drivers/dma/pl330.c
-@@ -3038,7 +3038,8 @@ static int pl330_remove(struct amba_device *adev)
- 
- 	for (i = 0; i < AMBA_NR_IRQS; i++) {
- 		irq = adev->irq[i];
--		devm_free_irq(&adev->dev, irq, pl330);
-+		if (irq)
-+			devm_free_irq(&adev->dev, irq, pl330);
- 	}
- 
- 	dma_async_device_unregister(&pl330->ddma);
-
-From 69414d3c8067401efa793708cb465f3891c087b7 Mon Sep 17 00:00:00 2001
+From a270b6c242863aedab52434e39b60bfda4440670 Mon Sep 17 00:00:00 2001
 From: Marek Szyprowski <m.szyprowski@samsung.com>
 Date: Mon, 27 Mar 2017 07:31:03 +0200
 Subject: [PATCH] UPSTREAM: dmaengine: pl330: remove pdata based initialization
@@ -1368,7 +1554,7 @@ index e212f9d804bd..2ef19ad5cb62 100644
  #include <linux/types.h>
  #include <linux/interrupt.h>
 diff --git a/drivers/dma/pl330.c b/drivers/dma/pl330.c
-index 73eaf78871f1..23fdb826c6e8 100644
+index c725ceb4644d..939337582597 100644
 --- a/drivers/dma/pl330.c
 +++ b/drivers/dma/pl330.c
 @@ -22,7 +22,6 @@
@@ -1512,7 +1698,39 @@ index fe93758e8403..000000000000
 -extern bool pl330_filter(struct dma_chan *chan, void *param);
 -#endif	/* __AMBA_PL330_H_ */
 
-From b6ec69572e0392b5aa2ded093809d2ff12efb32a Mon Sep 17 00:00:00 2001
+From 044636911abb5a02921594c154053b5b58d6631a Mon Sep 17 00:00:00 2001
+From: Jean-Philippe Brucker <jean-philippe.brucker@arm.com>
+Date: Thu, 1 Jun 2017 19:22:01 +0100
+Subject: [PATCH] UPSTREAM: dmaengine: pl330: fix warning in pl330_remove
+
+When removing a device with less than 9 IRQs (AMBA_NR_IRQS), we'll get a
+big WARN_ON from devres.c because pl330_remove calls devm_free_irqs for
+unallocated irqs. Similarly to pl330_probe, check that IRQ number is
+present before calling devm_free_irq.
+
+Signed-off-by: Jean-Philippe Brucker <jean-philippe.brucker@arm.com>
+Signed-off-by: Vinod Koul <vinod.koul@intel.com>
+(cherry picked from commit ebcdaee4cebb3a8d0d702ab5e9392373672ec1de)
+---
+ drivers/dma/pl330.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/dma/pl330.c b/drivers/dma/pl330.c
+index 939337582597..23fdb826c6e8 100644
+--- a/drivers/dma/pl330.c
++++ b/drivers/dma/pl330.c
+@@ -3012,7 +3012,8 @@ static int pl330_remove(struct amba_device *adev)
+ 
+ 	for (i = 0; i < AMBA_NR_IRQS; i++) {
+ 		irq = adev->irq[i];
+-		devm_free_irq(&adev->dev, irq, pl330);
++		if (irq)
++			devm_free_irq(&adev->dev, irq, pl330);
+ 	}
+ 
+ 	dma_async_device_unregister(&pl330->ddma);
+
+From 9a841ab72a35f4833b05e17e5bca4e1b54c54b97 Mon Sep 17 00:00:00 2001
 From: Matthias Kaehlcke <mka@chromium.org>
 Date: Thu, 15 Jun 2017 16:55:57 -0700
 Subject: [PATCH] UPSTREAM: dmaengine: pl330: Delete unused functions
@@ -1627,7 +1845,7 @@ index 23fdb826c6e8..51aa1de88007 100644
  		enum pl330_cond cond, u8 peri)
  {
 
-From e8316771f06dfd265999bfd43301329c6955fb24 Mon Sep 17 00:00:00 2001
+From fa46951237759d0ba193e44c7e03722d59f2e68f Mon Sep 17 00:00:00 2001
 From: Arvind Yadav <arvind.yadav.cs@gmail.com>
 Date: Wed, 23 Aug 2017 21:57:31 +0530
 Subject: [PATCH] UPSTREAM: dmaengine: pl330: constify amba_id
@@ -1656,7 +1874,7 @@ index 51aa1de88007..defec1b4bc2f 100644
  		.id	= 0x00041330,
  		.mask	= 0x000fffff,
 
-From 784e0ffe42096a6c6119668a631338c6cff43374 Mon Sep 17 00:00:00 2001
+From 281445c5d8b055c536c8087595bab78d06a63bf0 Mon Sep 17 00:00:00 2001
 From: Alexander Kochetkov <al.kochet@gmail.com>
 Date: Wed, 4 Oct 2017 14:37:23 +0300
 Subject: [PATCH] UPSTREAM: dmaengine: pl330: fix descriptor allocation fail
@@ -1783,3 +2001,164 @@ index defec1b4bc2f..76f514efe9d0 100644
  		dev_warn(&adev->dev, "unable to allocate desc\n");
  
  	INIT_LIST_HEAD(&pd->channels);
+
+From 0be40f97ea3ef4b577bff513ccc187cce6461a16 Mon Sep 17 00:00:00 2001
+From: Qi Hou <qi.hou@windriver.com>
+Date: Tue, 6 Mar 2018 09:13:37 +0800
+Subject: [PATCH] UPSTREAM: dmaengine: pl330: fix a race condition in case of
+ threaded irqs
+
+When booting up with "threadirqs" in command line, all irq handlers of the DMA
+controller pl330 will be threaded forcedly. These threads will race for the same
+list, pl330->req_done.
+
+Before the callback, the spinlock was released. And after it, the spinlock was
+taken. This opened an race window where another threaded irq handler could steal
+the spinlock and be permitted to delete entries of the list, pl330->req_done.
+
+If the later deleted an entry that was still referred to by the former, there would
+be a kernel panic when the former was scheduled and tried to get the next sibling
+of the deleted entry.
+
+The scenario could be depicted as below:
+
+  Thread: T1  pl330->req_done  Thread: T2
+      |             |              |
+      |          -A-B-C-D-         |
+    Locked          |              |
+      |             |           Waiting
+    Del A           |              |
+      |          -B-C-D-           |
+    Unlocked        |              |
+      |             |           Locked
+    Waiting         |              |
+      |             |            Del B
+      |             |              |
+      |           -C-D-         Unlocked
+    Waiting         |              |
+      |
+    Locked
+      |
+   get C via B
+      \
+       - Kernel panic
+
+The kernel panic looked like as below:
+
+Unable to handle kernel paging request at virtual address dead000000000108
+pgd = ffffff8008c9e000
+[dead000000000108] *pgd=000000027fffe003, *pud=000000027fffe003, *pmd=0000000000000000
+Internal error: Oops: 96000044 [#1] PREEMPT SMP
+Modules linked in:
+CPU: 0 PID: 85 Comm: irq/59-66330000 Not tainted 4.8.24-WR9.0.0.12_standard #2
+Hardware name: Broadcom NS2 SVK (DT)
+task: ffffffc1f5cc3c00 task.stack: ffffffc1f5ce0000
+PC is at pl330_irq_handler+0x27c/0x390
+LR is at pl330_irq_handler+0x2a8/0x390
+pc : [<ffffff80084cb694>] lr : [<ffffff80084cb6c0>] pstate: 800001c5
+sp : ffffffc1f5ce3d00
+x29: ffffffc1f5ce3d00 x28: 0000000000000140
+x27: ffffffc1f5c530b0 x26: dead000000000100
+x25: dead000000000200 x24: 0000000000418958
+x23: 0000000000000001 x22: ffffffc1f5ccd668
+x21: ffffffc1f5ccd590 x20: ffffffc1f5ccd418
+x19: dead000000000060 x18: 0000000000000001
+x17: 0000000000000007 x16: 0000000000000001
+x15: ffffffffffffffff x14: ffffffffffffffff
+x13: ffffffffffffffff x12: 0000000000000000
+x11: 0000000000000001 x10: 0000000000000840
+x9 : ffffffc1f5ce0000 x8 : ffffffc1f5cc3338
+x7 : ffffff8008ce2020 x6 : 0000000000000000
+x5 : 0000000000000000 x4 : 0000000000000001
+x3 : dead000000000200 x2 : dead000000000100
+x1 : 0000000000000140 x0 : ffffffc1f5ccd590
+
+Process irq/59-66330000 (pid: 85, stack limit = 0xffffffc1f5ce0020)
+Stack: (0xffffffc1f5ce3d00 to 0xffffffc1f5ce4000)
+3d00: ffffffc1f5ce3d80 ffffff80080f09d0 ffffffc1f5ca0c00 ffffffc1f6f7c600
+3d20: ffffffc1f5ce0000 ffffffc1f6f7c600 ffffffc1f5ca0c00 ffffff80080f0998
+3d40: ffffffc1f5ce0000 ffffff80080f0000 0000000000000000 0000000000000000
+3d60: ffffff8008ce202c ffffff8008ce2020 ffffffc1f5ccd668 ffffffc1f5c530b0
+3d80: ffffffc1f5ce3db0 ffffff80080f0d70 ffffffc1f5ca0c40 0000000000000001
+3da0: ffffffc1f5ce0000 ffffff80080f0cfc ffffffc1f5ce3e20 ffffff80080bf4f8
+3dc0: ffffffc1f5ca0c80 ffffff8008bf3798 ffffff8008955528 ffffffc1f5ca0c00
+3de0: ffffff80080f0c30 0000000000000000 0000000000000000 0000000000000000
+3e00: 0000000000000000 0000000000000000 0000000000000000 ffffff80080f0b68
+3e20: 0000000000000000 ffffff8008083690 ffffff80080bf420 ffffffc1f5ca0c80
+3e40: 0000000000000000 0000000000000000 0000000000000000 ffffff80080cb648
+3e60: ffffff8008b1c780 0000000000000000 0000000000000000 ffffffc1f5ca0c00
+3e80: ffffffc100000000 ffffff8000000000 ffffffc1f5ce3e90 ffffffc1f5ce3e90
+3ea0: 0000000000000000 ffffff8000000000 ffffffc1f5ce3eb0 ffffffc1f5ce3eb0
+3ec0: 0000000000000000 0000000000000000 0000000000000000 0000000000000000
+3ee0: 0000000000000000 0000000000000000 0000000000000000 0000000000000000
+3f00: 0000000000000000 0000000000000000 0000000000000000 0000000000000000
+3f20: 0000000000000000 0000000000000000 0000000000000000 0000000000000000
+3f40: 0000000000000000 0000000000000000 0000000000000000 0000000000000000
+3f60: 0000000000000000 0000000000000000 0000000000000000 0000000000000000
+3f80: 0000000000000000 0000000000000000 0000000000000000 0000000000000000
+3fa0: 0000000000000000 0000000000000000 0000000000000000 0000000000000000
+3fc0: 0000000000000000 0000000000000005 0000000000000000 0000000000000000
+3fe0: 0000000000000000 0000000000000000 0000000275ce3ff0 0000000275ce3ff8
+Call trace:
+Exception stack(0xffffffc1f5ce3b30 to 0xffffffc1f5ce3c60)
+3b20:                                   dead000000000060 0000008000000000
+3b40: ffffffc1f5ce3d00 ffffff80084cb694 0000000000000008 0000000000000e88
+3b60: ffffffc1f5ce3bb0 ffffff80080dac68 ffffffc1f5ce3b90 ffffff8008826fe4
+3b80: 00000000000001c0 00000000000001c0 ffffffc1f5ce3bb0 ffffff800848dfcc
+3ba0: 0000000000020000 ffffff8008b15ae4 ffffffc1f5ce3c00 ffffff800808f000
+3bc0: 0000000000000010 ffffff80088377f0 ffffffc1f5ccd590 0000000000000140
+3be0: dead000000000100 dead000000000200 0000000000000001 0000000000000000
+3c00: 0000000000000000 ffffff8008ce2020 ffffffc1f5cc3338 ffffffc1f5ce0000
+3c20: 0000000000000840 0000000000000001 0000000000000000 ffffffffffffffff
+3c40: ffffffffffffffff ffffffffffffffff 0000000000000001 0000000000000007
+[<ffffff80084cb694>] pl330_irq_handler+0x27c/0x390
+[<ffffff80080f09d0>] irq_forced_thread_fn+0x38/0x88
+[<ffffff80080f0d70>] irq_thread+0x140/0x200
+[<ffffff80080bf4f8>] kthread+0xd8/0xf0
+[<ffffff8008083690>] ret_from_fork+0x10/0x40
+Code: f2a00838 f9405763 aa1c03e1 aa1503e0 (f9000443)
+---[ end trace f50005726d31199c ]---
+Kernel panic - not syncing: Fatal exception in interrupt
+SMP: stopping secondary CPUs
+SMP: failed to stop secondary CPUs 0-1
+Kernel Offset: disabled
+Memory Limit: none
+---[ end Kernel panic - not syncing: Fatal exception in interrupt
+
+To fix this, re-start with the list-head after dropping the lock then
+re-takeing it.
+
+Reviewed-by: Frank Mori Hess <fmh6jj@gmail.com>
+Tested-by: Frank Mori Hess <fmh6jj@gmail.com>
+Signed-off-by: Qi Hou <qi.hou@windriver.com>
+Signed-off-by: Vinod Koul <vinod.koul@intel.com>
+
+(cherry picked from commit a3ca831249ca8c4c226e4ceafee04e280152e59d)
+---
+ drivers/dma/pl330.c | 6 ++++--
+ 1 file changed, 4 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/dma/pl330.c b/drivers/dma/pl330.c
+index 76f514efe9d0..82b465e58e75 100644
+--- a/drivers/dma/pl330.c
++++ b/drivers/dma/pl330.c
+@@ -1507,7 +1507,7 @@ static void pl330_dotask(unsigned long data)
+ /* Returns 1 if state was updated, 0 otherwise */
+ static int pl330_update(struct pl330_dmac *pl330)
+ {
+-	struct dma_pl330_desc *descdone, *tmp;
++	struct dma_pl330_desc *descdone;
+ 	unsigned long flags;
+ 	void __iomem *regs;
+ 	u32 val;
+@@ -1585,7 +1585,9 @@ static int pl330_update(struct pl330_dmac *pl330)
+ 	}
+ 
+ 	/* Now that we are in no hurry, do the callbacks */
+-	list_for_each_entry_safe(descdone, tmp, &pl330->req_done, rqd) {
++	while (!list_empty(&pl330->req_done)) {
++		descdone = list_first_entry(&pl330->req_done,
++					    struct dma_pl330_desc, rqd);
+ 		list_del(&descdone->rqd);
+ 		spin_unlock_irqrestore(&pl330->lock, flags);
+ 		dma_pl330_rqcb(descdone, PL330_ERR_NONE);
