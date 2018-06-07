@@ -1,0 +1,311 @@
+From e11b835d769b1421f04ae8f1b3a444d63c29e9f0 Mon Sep 17 00:00:00 2001
+From: Jonas Karlman <jonas@kwiboo.se>
+Date: Sat, 5 May 2018 20:52:48 +0200
+Subject: [PATCH] cube-tex: destroy gbm bo after egl import
+
+---
+ cube-tex.c | 69 +++++++++++++++++++++++++++---------------------------
+ 1 file changed, 34 insertions(+), 35 deletions(-)
+
+diff --git a/cube-tex.c b/cube-tex.c
+index 7353de4..04ccd0a 100644
+--- a/cube-tex.c
++++ b/cube-tex.c
+@@ -217,9 +217,8 @@ static const uint32_t texw = 512, texh = 512;
+ WEAK uint64_t
+ gbm_bo_get_modifier(struct gbm_bo *bo);
+ 
+-static int get_fd_rgba(uint32_t *pstride, uint64_t *modifier)
++static int get_fd_rgba(uint32_t *pstride, uint64_t *modifier, struct gbm_bo **bo)
+ {
+-	struct gbm_bo *bo;
+ 	void *map_data = NULL;
+ 	uint32_t stride;
+ 	extern const uint32_t raw_512x512_rgba[];
+@@ -227,34 +226,31 @@ static int get_fd_rgba(uint32_t *pstride, uint64_t *modifier)
+ 	int fd;
+ 
+ 	/* NOTE: do not actually use GBM_BO_USE_WRITE since that gets us a dumb buffer: */
+-	bo = gbm_bo_create(gl.gbm->dev, texw, texh, GBM_FORMAT_ABGR8888, GBM_BO_USE_LINEAR);
++	*bo = gbm_bo_create(gl.gbm->dev, texw, texh, GBM_FORMAT_ABGR8888, GBM_BO_USE_LINEAR);
++	assert(*bo);
+ 
+-	map = gbm_bo_map(bo, 0, 0, texw, texh, GBM_BO_TRANSFER_WRITE, &stride, &map_data);
++	map = gbm_bo_map(*bo, 0, 0, texw, texh, GBM_BO_TRANSFER_WRITE, &stride, &map_data);
+ 
+ 	for (uint32_t i = 0; i < texh; i++) {
+ 		memcpy(&map[stride * i], &src[texw * 4 * i], texw * 4);
+ 	}
+ 
+-	gbm_bo_unmap(bo, map_data);
++	gbm_bo_unmap(*bo, map_data);
+ 
+-	fd = gbm_bo_get_fd(bo);
++	fd = gbm_bo_get_fd(*bo);
+ 
+ 	if (gbm_bo_get_modifier)
+-		*modifier = gbm_bo_get_modifier(bo);
++		*modifier = gbm_bo_get_modifier(*bo);
+ 	else
+ 		*modifier = DRM_FORMAT_MOD_LINEAR;
+ 
+-	/* we have the fd now, no longer need the bo: */
+-	gbm_bo_destroy(bo);
+-
+ 	*pstride = stride;
+ 
+ 	return fd;
+ }
+ 
+-static int get_fd_y(uint32_t *pstride, uint64_t *modifier)
++static int get_fd_y(uint32_t *pstride, uint64_t *modifier, struct gbm_bo **bo)
+ {
+-	struct gbm_bo *bo;
+ 	void *map_data = NULL;
+ 	uint32_t stride;
+ 	extern const uint32_t raw_512x512_nv12[];
+@@ -262,34 +258,31 @@ static int get_fd_y(uint32_t *pstride, uint64_t *modifier)
+ 	int fd;
+ 
+ 	/* NOTE: do not actually use GBM_BO_USE_WRITE since that gets us a dumb buffer: */
+-	bo = gbm_bo_create(gl.gbm->dev, texw, texh, GBM_FORMAT_R8, GBM_BO_USE_LINEAR);
++	*bo = gbm_bo_create(gl.gbm->dev, texw, texh, GBM_FORMAT_R8, GBM_BO_USE_LINEAR);
++	assert(*bo);
+ 
+-	map = gbm_bo_map(bo, 0, 0, texw, texh, GBM_BO_TRANSFER_WRITE, &stride, &map_data);
++	map = gbm_bo_map(*bo, 0, 0, texw, texh, GBM_BO_TRANSFER_WRITE, &stride, &map_data);
+ 
+ 	for (uint32_t i = 0; i < texh; i++) {
+ 		memcpy(&map[stride * i], &src[texw * i], texw);
+ 	}
+ 
+-	gbm_bo_unmap(bo, map_data);
++	gbm_bo_unmap(*bo, map_data);
+ 
+-	fd = gbm_bo_get_fd(bo);
++	fd = gbm_bo_get_fd(*bo);
+ 
+ 	if (gbm_bo_get_modifier)
+-		*modifier = gbm_bo_get_modifier(bo);
++		*modifier = gbm_bo_get_modifier(*bo);
+ 	else
+ 		*modifier = DRM_FORMAT_MOD_LINEAR;
+ 
+-	/* we have the fd now, no longer need the bo: */
+-	gbm_bo_destroy(bo);
+-
+ 	*pstride = stride;
+ 
+ 	return fd;
+ }
+ 
+-static int get_fd_uv(uint32_t *pstride, uint64_t *modifier)
++static int get_fd_uv(uint32_t *pstride, uint64_t *modifier, struct gbm_bo **bo)
+ {
+-	struct gbm_bo *bo;
+ 	void *map_data = NULL;
+ 	uint32_t stride;
+ 	extern const uint32_t raw_512x512_nv12[];
+@@ -297,26 +290,24 @@ static int get_fd_uv(uint32_t *pstride, uint64_t *modifier)
+ 	int fd;
+ 
+ 	/* NOTE: do not actually use GBM_BO_USE_WRITE since that gets us a dumb buffer: */
+-	bo = gbm_bo_create(gl.gbm->dev, texw/2, texh/2, GBM_FORMAT_GR88, GBM_BO_USE_LINEAR);
++	*bo = gbm_bo_create(gl.gbm->dev, texw/2, texh/2, GBM_FORMAT_GR88, GBM_BO_USE_LINEAR);
++	assert(*bo);
+ 
+-	map = gbm_bo_map(bo, 0, 0, texw/2, texh/2, GBM_BO_TRANSFER_WRITE, &stride, &map_data);
++	map = gbm_bo_map(*bo, 0, 0, texw/2, texh/2, GBM_BO_TRANSFER_WRITE, &stride, &map_data);
+ 
+ 	for (uint32_t i = 0; i < texh/2; i++) {
+ 		memcpy(&map[stride * i], &src[texw * i], texw);
+ 	}
+ 
+-	gbm_bo_unmap(bo, map_data);
++	gbm_bo_unmap(*bo, map_data);
+ 
+-	fd = gbm_bo_get_fd(bo);
++	fd = gbm_bo_get_fd(*bo);
+ 
+ 	if (gbm_bo_get_modifier)
+-		*modifier = gbm_bo_get_modifier(bo);
++		*modifier = gbm_bo_get_modifier(*bo);
+ 	else
+ 		*modifier = DRM_FORMAT_MOD_LINEAR;
+ 
+-	/* we have the fd now, no longer need the bo: */
+-	gbm_bo_destroy(bo);
+-
+ 	*pstride = stride;
+ 
+ 	return fd;
+@@ -326,7 +317,8 @@ static int init_tex_rgba(void)
+ {
+ 	uint32_t stride;
+ 	uint64_t modifier;
+-	int fd = get_fd_rgba(&stride, &modifier);
++	struct gbm_bo *bo;
++	int fd = get_fd_rgba(&stride, &modifier, &bo);
+ 	EGLint attr[] = {
+ 		EGL_WIDTH, texw,
+ 		EGL_HEIGHT, texh,
+@@ -363,6 +355,7 @@ static int init_tex_rgba(void)
+ 	egl->glEGLImageTargetTexture2DOES(GL_TEXTURE_EXTERNAL_OES, img);
+ 
+ 	egl->eglDestroyImageKHR(egl->display, img);
++	gbm_bo_destroy(bo);
+ 
+ 	return 0;
+ }
+@@ -371,8 +364,9 @@ static int init_tex_nv12_2img(void)
+ {
+ 	uint32_t stride_y, stride_uv;
+ 	uint64_t modifier_y, modifier_uv;
+-	int fd_y = get_fd_y(&stride_y, &modifier_y);
+-	int fd_uv = get_fd_uv(&stride_uv, &modifier_uv);
++	struct gbm_bo *bo_y, *bo_uv;
++	int fd_y = get_fd_y(&stride_y, &modifier_y, &bo_y);
++	int fd_uv = get_fd_uv(&stride_uv, &modifier_uv, &bo_uv);
+ 	EGLint attr_y[] = {
+ 		EGL_WIDTH, texw,
+ 		EGL_HEIGHT, texh,
+@@ -429,6 +423,7 @@ static int init_tex_nv12_2img(void)
+ 	egl->glEGLImageTargetTexture2DOES(GL_TEXTURE_EXTERNAL_OES, img_y);
+ 
+ 	egl->eglDestroyImageKHR(egl->display, img_y);
++	gbm_bo_destroy(bo_y);
+ 
+ 	/* UV plane texture: */
+ 	img_uv = egl->eglCreateImageKHR(egl->display, EGL_NO_CONTEXT,
+@@ -443,6 +438,7 @@ static int init_tex_nv12_2img(void)
+ 	egl->glEGLImageTargetTexture2DOES(GL_TEXTURE_EXTERNAL_OES, img_uv);
+ 
+ 	egl->eglDestroyImageKHR(egl->display, img_uv);
++	gbm_bo_destroy(bo_uv);
+ 
+ 	return 0;
+ }
+@@ -451,8 +447,9 @@ static int init_tex_nv12_1img(void)
+ {
+ 	uint32_t stride_y, stride_uv;
+ 	uint64_t modifier_y, modifier_uv;
+-	int fd_y = get_fd_y(&stride_y, &modifier_y);
+-	int fd_uv = get_fd_uv(&stride_uv, &modifier_uv);
++	struct gbm_bo *bo_y, *bo_uv;
++	int fd_y = get_fd_y(&stride_y, &modifier_y, &bo_y);
++	int fd_uv = get_fd_uv(&stride_uv, &modifier_uv, &bo_uv);
+ 	EGLint attr[] = {
+ 		EGL_WIDTH, texw,
+ 		EGL_HEIGHT, texh,
+@@ -499,6 +496,8 @@ static int init_tex_nv12_1img(void)
+ 	egl->glEGLImageTargetTexture2DOES(GL_TEXTURE_EXTERNAL_OES, img);
+ 
+ 	egl->eglDestroyImageKHR(egl->display, img);
++	gbm_bo_destroy(bo_y);
++	gbm_bo_destroy(bo_uv);
+ 
+ 	return 0;
+ }
+
+From 4683d2ff6a7cfa767933ef471d3c10b71dc8c7a6 Mon Sep 17 00:00:00 2001
+From: Jonas Karlman <jonas@kwiboo.se>
+Date: Sat, 5 May 2018 20:53:35 +0200
+Subject: [PATCH] cube-tex: use RGBA8888 format
+
+---
+ cube-tex.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/cube-tex.c b/cube-tex.c
+index 04ccd0a..daf90a1 100644
+--- a/cube-tex.c
++++ b/cube-tex.c
+@@ -226,7 +226,7 @@ static int get_fd_rgba(uint32_t *pstride, uint64_t *modifier, struct gbm_bo **bo
+ 	int fd;
+ 
+ 	/* NOTE: do not actually use GBM_BO_USE_WRITE since that gets us a dumb buffer: */
+-	*bo = gbm_bo_create(gl.gbm->dev, texw, texh, GBM_FORMAT_ABGR8888, GBM_BO_USE_LINEAR);
++	*bo = gbm_bo_create(gl.gbm->dev, texw, texh, GBM_FORMAT_RGBA8888, GBM_BO_USE_LINEAR);
+ 	assert(*bo);
+ 
+ 	map = gbm_bo_map(*bo, 0, 0, texw, texh, GBM_BO_TRANSFER_WRITE, &stride, &map_data);
+@@ -322,7 +322,7 @@ static int init_tex_rgba(void)
+ 	EGLint attr[] = {
+ 		EGL_WIDTH, texw,
+ 		EGL_HEIGHT, texh,
+-		EGL_LINUX_DRM_FOURCC_EXT, DRM_FORMAT_ABGR8888,
++		EGL_LINUX_DRM_FOURCC_EXT, DRM_FORMAT_RGBA8888,
+ 		EGL_DMA_BUF_PLANE0_FD_EXT, fd,
+ 		EGL_DMA_BUF_PLANE0_OFFSET_EXT, 0,
+ 		EGL_DMA_BUF_PLANE0_PITCH_EXT, stride,
+
+From e5e8b6e28ce26f0764c16e3f3311c2f38670e95a Mon Sep 17 00:00:00 2001
+From: Jonas Karlman <jonas@kwiboo.se>
+Date: Sat, 5 May 2018 20:55:35 +0200
+Subject: [PATCH] cube-tex: add fallback to RGBA8888
+
+---
+ cube-tex.c | 18 ++++++++++++++----
+ 1 file changed, 14 insertions(+), 4 deletions(-)
+
+diff --git a/cube-tex.c b/cube-tex.c
+index daf90a1..4164c8f 100644
+--- a/cube-tex.c
++++ b/cube-tex.c
+@@ -259,9 +259,14 @@ static int get_fd_y(uint32_t *pstride, uint64_t *modifier, struct gbm_bo **bo)
+ 
+ 	/* NOTE: do not actually use GBM_BO_USE_WRITE since that gets us a dumb buffer: */
+ 	*bo = gbm_bo_create(gl.gbm->dev, texw, texh, GBM_FORMAT_R8, GBM_BO_USE_LINEAR);
+-	assert(*bo);
++	if (*bo) {
++		map = gbm_bo_map(*bo, 0, 0, texw, texh, GBM_BO_TRANSFER_WRITE, &stride, &map_data);
++	} else {
++		*bo = gbm_bo_create(gl.gbm->dev, texw/4, texh, GBM_FORMAT_RGBA8888, GBM_BO_USE_LINEAR);
++		assert(*bo);
+ 
+-	map = gbm_bo_map(*bo, 0, 0, texw, texh, GBM_BO_TRANSFER_WRITE, &stride, &map_data);
++		map = gbm_bo_map(*bo, 0, 0, texw/4, texh, GBM_BO_TRANSFER_WRITE, &stride, &map_data);
++	}
+ 
+ 	for (uint32_t i = 0; i < texh; i++) {
+ 		memcpy(&map[stride * i], &src[texw * i], texw);
+@@ -291,9 +296,14 @@ static int get_fd_uv(uint32_t *pstride, uint64_t *modifier, struct gbm_bo **bo)
+ 
+ 	/* NOTE: do not actually use GBM_BO_USE_WRITE since that gets us a dumb buffer: */
+ 	*bo = gbm_bo_create(gl.gbm->dev, texw/2, texh/2, GBM_FORMAT_GR88, GBM_BO_USE_LINEAR);
+-	assert(*bo);
++	if (*bo) {
++		map = gbm_bo_map(*bo, 0, 0, texw/2, texh/2, GBM_BO_TRANSFER_WRITE, &stride, &map_data);
++	} else {
++		*bo = gbm_bo_create(gl.gbm->dev, texw/2/2, texh/2, GBM_FORMAT_RGBA8888, GBM_BO_USE_LINEAR);
++		assert(*bo);
+ 
+-	map = gbm_bo_map(*bo, 0, 0, texw/2, texh/2, GBM_BO_TRANSFER_WRITE, &stride, &map_data);
++		map = gbm_bo_map(*bo, 0, 0, texw/2/2, texh/2, GBM_BO_TRANSFER_WRITE, &stride, &map_data);
++	}
+ 
+ 	for (uint32_t i = 0; i < texh/2; i++) {
+ 		memcpy(&map[stride * i], &src[texw * i], texw);
+
+From 60787ff16cfe8363a39081a78d15610c3f5401f0 Mon Sep 17 00:00:00 2001
+From: Jonas Karlman <jonas@kwiboo.se>
+Date: Sat, 5 May 2018 20:56:39 +0200
+Subject: [PATCH] cube-tex: add missing egl parameters for NV12
+
+---
+ cube-tex.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/cube-tex.c b/cube-tex.c
+index 4164c8f..4e7acac 100644
+--- a/cube-tex.c
++++ b/cube-tex.c
+@@ -470,6 +470,8 @@ static int init_tex_nv12_1img(void)
+ 		EGL_DMA_BUF_PLANE1_FD_EXT, fd_uv,
+ 		EGL_DMA_BUF_PLANE1_OFFSET_EXT, 0,
+ 		EGL_DMA_BUF_PLANE1_PITCH_EXT, stride_uv,
++		EGL_YUV_COLOR_SPACE_HINT_EXT, EGL_ITU_REC709_EXT,
++		EGL_SAMPLE_RANGE_HINT_EXT, EGL_YUV_NARROW_RANGE_EXT,
+ 		EGL_NONE, EGL_NONE,	/* modifier lo */
+ 		EGL_NONE, EGL_NONE,	/* modifier hi */
+ 		EGL_NONE, EGL_NONE,	/* modifier lo */

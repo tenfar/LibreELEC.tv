@@ -34,3 +34,7 @@ elif [ "$OPENGL_SUPPORT" = "yes" ]; then
   echo "kmscube only supports OpenGLESv2"
   exit 0
 fi
+
+if [ "$OPENGLES" = "mali-rockchip" ]; then
+  PKG_DEPENDS_TARGET+=" gbm-rockchip"
+fi
