@@ -12,6 +12,10 @@
         <setting id="videoscreen.fakefullscreen">
           <visible>false</visible>
         </setting>
+        <setting id="videoscreen.limitguisize">
+          <default>3</default>
+          <visible>true</visible>
+        </setting>
       </group>
       <group id="3">
         <setting id="videoscreen.noofbuffers">
