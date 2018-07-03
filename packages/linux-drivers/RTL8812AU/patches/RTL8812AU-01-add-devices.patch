@@ -1,0 +1,14 @@
+diff --git a/os_dep/linux/usb_intf.c b/os_dep/linux/usb_intf.c
+index c3bc092..ae941e1 100644
+--- a/os_dep/linux/usb_intf.c
++++ b/os_dep/linux/usb_intf.c
+@@ -173,6 +173,9 @@ static struct usb_device_id rtw_usb_id_tbl[] = {
+ 	/*=== Patched ID ===*/
+ 	{USB_DEVICE(0x2357, 0x010d), .driver_info = RTL8812}, /* TP-Link - T4U v2 */
+ 	{USB_DEVICE(0x148F, 0x9097), .driver_info = RTL8812}, /* Amped Wireless ACA1 */
++	{USB_DEVICE(0x2357, 0x010E), .driver_info = RTL8812}, /* TP-Link - T4UH v2 */
++	{USB_DEVICE(0x2357, 0x010F), .driver_info = RTL8812}, /* TP-Link - T4UHP */
++	{USB_DEVICE(0x2357, 0x0122), .driver_info = RTL8812}, /* TP-Link - T4UHP (other) */
+ #endif
+ 
+ #ifdef CONFIG_RTL8821A
