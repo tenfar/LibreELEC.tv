@@ -114,7 +114,7 @@ index 0000000000..f1f6acab2b
 +#include "decode.h"
 +#include "rkvpu.h"
 +
-+#define VPU_DEVICE_NAME "/dev/vpu_service"
++#define VPU_DEVICE_NAME "/dev/vpu-service"
 +#define VPU_CLIENT_TYPE_DEC 0x1
 +
 +int ff_rkvpu_set_hw_regs(AVCodecContext *avctx, void *hw_regs, int nb_regs)

@@ -1,0 +1,17 @@
+diff --git a/mpp/codec/mpp_dec.cpp b/mpp/codec/mpp_dec.cpp
+index 314146c..9ee354d 100644
+--- a/mpp/codec/mpp_dec.cpp
++++ b/mpp/codec/mpp_dec.cpp
+@@ -710,7 +710,11 @@ void *mpp_dec_parser_thread(void *data)
+              * 3. no buffer on analyzing output task
+              */
+             dec_dbg_stauts("%p wait status: 0x%08x\n", dec, task.wait.val);
+-            if (check_task_wait(dec, &task))
++            /*
++             * According to description of check_task_wait
++             * MPP_NOK for wait
++             */
++           if (check_task_wait(dec, &task) == MPP_NOK)
+                 parser->wait();
+
+             dec_dbg_stauts("%p done status: 0x%08x\n", dec, task.wait.val);

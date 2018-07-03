@@ -1,0 +1,13 @@
+diff --git a/mpp/hal/rkdec/h265d/hal_h265d_reg.c b/mpp/hal/rkdec/h265d/hal_h265d_reg.c
+index 8ed41274..c3bbf86c 100644
+--- a/mpp/hal/rkdec/h265d/hal_h265d_reg.c
++++ b/mpp/hal/rkdec/h265d/hal_h265d_reg.c
+@@ -1460,8 +1460,6 @@ MPP_RET hal_h265d_gen_regs(void *hal,  HalTaskInfo *syn)
+     }
+     hw_regs->sw_interrupt.sw_dec_e         = 1;
+     hw_regs->sw_interrupt.sw_dec_timeout_e = 1;
+-    hw_regs->sw_interrupt.sw_wr_ddr_align_en = dxva_cxt->pp.tiles_enabled_flag
+-                                               ? 0 : 1;
+ 
+ 
+     ///find s->rps_model[i] position, and set register

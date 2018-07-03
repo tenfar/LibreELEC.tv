@@ -19,8 +19,8 @@
 
 PKG_NAME="ffmpeg"
 # Current branch is: release/4.0-kodi
-PKG_VERSION="e115b34"
-PKG_SHA256="d9aa2a281f002982474b45980553d3669a8c79021cf08e4cfcff5dd6e8e81268"
+PKG_VERSION="136449d"
+PKG_SHA256="d5c382cb5401ecc8e4bc09d770b1bc56f4a16c6fd2f25486302e90e9e9b05245"
 PKG_ARCH="any"
 PKG_LICENSE="LGPLv2.1+"
 PKG_SITE="https://ffmpeg.org"
@@ -102,8 +102,8 @@ pre_configure_target() {
     CFLAGS="-I$SYSROOT_PREFIX/usr/include/interface/vcos/pthreads -I$SYSROOT_PREFIX/usr/include/interface/vmcs_host/linux $CFLAGS"
     PKG_FFMPEG_LIBS="-lbcm_host -lvcos -lvchiq_arm -lmmal -lmmal_core -lmmal_util -lvcsm"
     PKG_FFMPEG_RPI="--enable-rpi"
-  else
-    PKG_FFMPEG_RPI="--disable-rpi"
+  #else
+  #  PKG_FFMPEG_RPI="--disable-rpi"
   fi
 }
 
