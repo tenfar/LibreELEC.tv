@@ -16,9 +16,9 @@ index 5ac2482..cb84940 100644
    bool SetFullScreen(bool fullScreen, RESOLUTION_INFO& res, bool blankOtherDisplays) override;
    void UpdateResolutions() override;
 +  bool CanDoWindowed() override { return false; }
-   int  GetNumScreens() override { return 1; }
-   int  GetCurrentScreen() override { return m_nScreen; }
    void ShowOSMouse(bool show) override;
+ 
+   void NotifyAppActiveChange(bool bActivated) override;
 -- 
 2.5.0
 
