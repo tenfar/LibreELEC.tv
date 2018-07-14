@@ -31,6 +31,7 @@ PKG_TOOLCHAIN="manual"
 makeinstall_target() {
   mkdir -p $INSTALL/usr/bin
     cp -v $(get_build_dir rkbin)/firmware/bin/rtk_hciattach $INSTALL/usr/bin
+    cp -v $(get_build_dir rkbin)/firmware/bin/brcm_patchram_plus $INSTALL/usr/bin
 
   mkdir -p $INSTALL/$(get_full_firmware_dir)/rtlbt
     cp -v $(get_build_dir rkbin)/firmware/bluetooth/rtl8723b_* $INSTALL/$(get_full_firmware_dir)/rtlbt
@@ -39,4 +40,15 @@ makeinstall_target() {
     cp -v $(get_build_dir rkbin)/firmware/bluetooth/BCM4354A2.hcd $INSTALL/$(get_full_firmware_dir)/brcm
     cp -v $(get_build_dir rkbin)/firmware/wifi/fw_bcm4356a2_ag.bin $INSTALL/$(get_full_firmware_dir)/brcm
     cp -v $(get_build_dir rkbin)/firmware/wifi/nvram_ap6356.txt $INSTALL/$(get_full_firmware_dir)/brcm
+    #skykirin x99 ap6255
+    cp -v $(get_build_dir rkbin)/firmware/bluetooth/BCM4345C0.hcd $INSTALL/$(get_full_firmware_dir)/brcm
+    cp -v $(get_build_dir rkbin)/firmware/wifi/fw_bcm43455c0_ag.bin $INSTALL/$(get_full_firmware_dir)/brcm
+    cp -v $(get_build_dir rkbin)/firmware/wifi/nvram_ap6255.txt $INSTALL/$(get_full_firmware_dir)/brcm
+
+
+
+
+}
+post_install() {
+  enable_service brcmpatchram.service
 }

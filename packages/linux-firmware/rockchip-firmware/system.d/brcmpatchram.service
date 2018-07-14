@@ -1,0 +1,18 @@
+[Unit]
+Description=Broadcom sdio firmware update 
+ConditionPathExists=/dev/ttyS0
+Wants=bluetooth.service
+Before=bluetooth.service
+After=dev-ttyS0.device
+
+[Service]
+Type=simple
+RemainAfterExit=yes
+ExecStartPre=/usr/sbin/rfkill unblock bluetooth
+ExecStart=/usr/bin/brcm_patchram_plus --patchram /lib/firmware/brcm/BCM4345C0.hcd --baudrate 1500000 --use_baudrate_for_download --enable_hci --no2bytes --tosleep=200000 --bd_addr 98:3B:16:00:00:00 /dev/ttyS0
+ExecStopPost=/usr/sbin/rfkill block bluetooth
+
+[Install]
+WantedBy=bluetooth.target
+
+
