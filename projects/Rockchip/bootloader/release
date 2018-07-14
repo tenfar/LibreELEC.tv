@@ -36,3 +36,44 @@ mkdir -p $RELEASE_DIR/3rdparty/bootloader
       cp -a $dtb $RELEASE_DIR/3rdparty/bootloader
     fi
   done
+LINUX_FILE=$(get_build_dir linux)/arch/$TARGET_KERNEL_ARCH/Image
+        BOOT=rkimage/system.img
+	rm -rf ${BOOT}
+
+	echo -e "\e[36m Generate System image start\e[0m"
+
+	# 512 Mb
+	mkfs.vfat -n "system" -S 512 -C ${BOOT} $((512 * 1024))
+
+	mmd -i ${BOOT} ::/extlinux
+	mcopy -i ${BOOT} -s $PROJECT_DIR/$PROJECT/devices/$DEVICE/bootloader/rk3399.conf ::/extlinux/extlinux.conf
+	mcopy -i ${BOOT} -s $TARGET_IMG/$IMAGE_NAME.kernel ::/KERNEL
+        mcopy -i ${BOOT} -s $TARGET_IMG/$IMAGE_NAME.system ::/SYSTEM
+        
+  for dtb in $LINUX_DTS_DIR/*.dtb $LINUX_DTS_DIR/*/*.dtb; do
+    if [ -f $dtb ]; then
+      mcopy -i ${BOOT} -s $dtb ::
+    fi
+  done
+	echo -e "\e[36m Generate rootfs image : ${BOOT} success! \e[0m"
+
+
+        BOOT2=rkimage/boot.img
+	rm -rf ${BOOT2}
+
+	echo -e "\e[36m Generate Boot image start\e[0m"
+
+	# 100 Mb
+	mkfs.vfat -n "boot" -S 512 -C ${BOOT2} $((100 * 1024))
+
+	mmd -i ${BOOT2} ::/extlinux
+	mcopy -i ${BOOT2} -s $PROJECT_DIR/$PROJECT/devices/$DEVICE/bootloader/rk3399.conf ::/extlinux/extlinux.conf
+	mcopy -i ${BOOT2} -s $TARGET_IMG/$IMAGE_NAME.kernel ::/KERNEL
+        #mcopy -i ${BOOT2} -s $TARGET_IMG/$IMAGE_NAME.system ::/SYSTEM
+        
+  for dtb in $LINUX_DTS_DIR/*.dtb $LINUX_DTS_DIR/*/*.dtb; do
+    if [ -f $dtb ]; then
+      mcopy -i ${BOOT2} -s $dtb ::
+    fi
+  done
+	echo -e "\e[36m Generate Boot image : ${BOOT2} success! \e[0m"
