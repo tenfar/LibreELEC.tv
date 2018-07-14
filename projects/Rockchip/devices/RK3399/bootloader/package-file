@@ -1,0 +1,15 @@
+# NAME		Relative path
+#
+#HWDEF		HWDEF
+package-file	package-file
+bootloader	rk3399_loader_v1.09.109.bin
+parameter	parameter.txt
+trust             trust.img
+uboot         uboot.img
+#resource	resource.img
+boot		boot.img
+system		system.img
+disk		disk.img
+backup		RESERVED
+#update-script	update-script
+#recover-script	recover-script
