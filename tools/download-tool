@@ -42,5 +42,6 @@ for package in $(find packages/ -name package.mk); do
   if [ -n "$(echo $package | grep addons)" -a -z "$ALL_PACKAGES" ]; then
     continue
   fi
+  echo "geting $package"
   ./scripts/get $(basename `dirname $package`)
 done
