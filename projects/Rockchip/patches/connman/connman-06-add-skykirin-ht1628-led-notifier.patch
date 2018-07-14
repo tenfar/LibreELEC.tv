@@ -1,0 +1,157 @@
+From a5008e3adce9daa4f69dd8060e1968fe0d699c60 Mon Sep 17 00:00:00 2001
+From: Jason Bruce <jason@bruce.com>
+Date: Sat, 26 May 2018 13:41:02 +0800
+Subject: [PATCH] aaaa
+
+---
+ Makefile.am               |    4 +-
+ include/skykirin-ht1628.h |   48 +
+ src/notifier.c            |   10 +-
+ src/skykirin-ht1628.c     |   19 +
+ 4 files changed, 78 insertions(+), 2 deletions(-)
+ create mode 100644 include/skykirin-ht1628.h
+ create mode 100644 src/skykirin-ht1628.c
+
+diff --git a/Makefile.am b/Makefile.am
+index 4a4340a..582283c 100644
+--- a/Makefile.am
++++ b/Makefile.am
+@@ -6,7 +6,7 @@ noinst_LTLIBRARIES =
+ includedir = @includedir@/connman
+ 
+ include_HEADERS = include/log.h include/plugin.h \
+-			include/notifier.h include/service.h \
++			include/notifier.h include/skykirin-ht1628.h include/service.h \
+ 			include/resolver.h include/ipconfig.h \
+ 			include/device.h include/network.h include/inet.h \
+ 			include/storage.h include/provision.h \
+@@ -119,7 +119,7 @@ src_connmand_SOURCES = $(gdhcp_sources) $(gweb_sources) $(stats_sources) \
+ 			src/device.c src/network.c src/connection.c \
+ 			src/manager.c src/service.c \
+ 			src/clock.c src/timezone.c src/agent-connman.c \
+-			src/agent.c src/notifier.c src/provider.c \
++			src/agent.c src/notifier.c src/skykirin-ht1628.c src/provider.c \
+ 			src/resolver.c src/ipconfig.c src/detect.c src/inet.c \
+ 			src/dhcp.c src/dhcpv6.c src/rtnl.c src/proxy.c \
+ 			src/utsname.c src/timeserver.c src/rfkill.c \
+diff --git a/include/skykirin-ht1628.h b/include/skykirin-ht1628.h
+new file mode 100644
+index 0000000..6f7da90
+--- /dev/null
++++ b/include/skykirin-ht1628.h
+@@ -0,0 +1,48 @@
++#ifndef SKYKIRIN_HT1628_H
++#define SKYKIRIN_HT1628_H
++
++
++
++#include <sys/ioctl.h>
++#include <unistd.h>
++#include <string.h>
++#include <fcntl.h>
++#include <sys/types.h>
++#include <stdio.h>
++
++#define IOCTL_MAGIC 'k'
++#define DISPLAY_OFF 10
++#define DISPLAY_ON 9
++#define DISPLAY_LAN_ON 7 
++#define DISPLAY_LAN_OFF 8 
++#define DISPLAY_WIFI_ON_1 3 
++#define DISPLAY_WIFI_ON_2 4
++#define DISPLAY_WIFI_ON_3 5 
++#define DISPLAY_WIFI_ON_4 6
++#define DISPLAY_DOT_ON 2
++#define DISPLAY_SET_UNKNOWN 0
++#define DISPLAY_SET_TIME 1
++#define DISPLAY_WIFI_ON_HALF 11
++#define DISPLAY_WIFI_ON_FULL 12
++#define DISPLAY_WIFI_OFF 13
++#define DISPLAY_POWER_ON 14
++
++//the ioctl use in ioctl function
++
++#define HT1628_DISP_ON     _IO(IOCTL_MAGIC,DISPLAY_ON)
++#define HT1628_DISP_OFF    _IO(IOCTL_MAGIC,DISPLAY_OFF)
++#define HT1628_DISP_SET_LAN_ON _IO(IOCTL_MAGIC,DISPLAY_LAN_ON)
++#define HT1628_DISP_SET_LAN_OFF _IO(IOCTL_MAGIC,DISPLAY_LAN_OFF)
++#define HT1628_DISP_WIFI_ON_L3 _IO(IOCTL_MAGIC,DISPLAY_WIFI_ON_3)
++#define HT1628_DISP_WIFI_ON_L4 _IO(IOCTL_MAGIC,DISPLAY_WIFI_ON_4)
++#define HT1628_DISP_DOT_ON     _IO(IOCTL_MAGIC,DISPLAY_DOT_ON)
++#define HT1628_DISP_SET_TIME   _IOW(IOCTL_MAGIC,DISPLAY_SET_TIME,unsigned long)
++#define HT1628_DISP_SET_UNKNOWN _IOW(IOCTL_MAGIC,DISPLAY_SET_UNKNOWN,unsigned long)
++#define HT1628_DISP_WIFI_ON_FULL _IO(IOCTL_MAGIC,DISPLAY_WIFI_ON_FULL) //wifi 2 on
++#define HT1628_DISP_WIFI_ON_HALF _IO(IOCTL_MAGIC,DISPLAY_WIFI_ON_HALF) //wifi 1 on
++#define HT1628_DISP_WIFI_OFF     _IO(IOCTL_MAGIC,DISPLAY_WIFI_OFF) //wifi 2 off
++#define HT1628_DISP_POWER_ON	_IO(IOCTL_MAGIC,DISPLAY_POWER_ON) //poweron
++
++void set_ht1628_status(int cmd);
++
++#endif
+diff --git a/src/notifier.c b/src/notifier.c
+index 5ba5324..fa2d055 100644
+--- a/src/notifier.c
++++ b/src/notifier.c
+@@ -22,7 +22,7 @@
+ #ifdef HAVE_CONFIG_H
+ #include <config.h>
+ #endif
+-
++#include <connman/skykirin-ht1628.h>
+ #include <gdbus.h>
+ 
+ #include "connman.h"
+@@ -148,8 +148,12 @@ void __connman_notifier_connect(enum connman_service_type type)
+ 	case CONNMAN_SERVICE_TYPE_VPN:
+ 		return;
+ 	case CONNMAN_SERVICE_TYPE_ETHERNET:
++		set_ht1628_status(HT1628_DISP_SET_LAN_ON);
++		break;
+ 	case CONNMAN_SERVICE_TYPE_GADGET:
+ 	case CONNMAN_SERVICE_TYPE_WIFI:
++	    set_ht1628_status(HT1628_DISP_WIFI_ON_FULL);
++	    break;
+ 	case CONNMAN_SERVICE_TYPE_BLUETOOTH:
+ 	case CONNMAN_SERVICE_TYPE_CELLULAR:
+ 	case CONNMAN_SERVICE_TYPE_P2P:
+@@ -195,8 +199,12 @@ void __connman_notifier_disconnect(enum connman_service_type type)
+ 	case CONNMAN_SERVICE_TYPE_VPN:
+ 		return;
+ 	case CONNMAN_SERVICE_TYPE_ETHERNET:
++		set_ht1628_status(HT1628_DISP_SET_LAN_OFF);
++		break;
+ 	case CONNMAN_SERVICE_TYPE_GADGET:
+ 	case CONNMAN_SERVICE_TYPE_WIFI:
++		set_ht1628_status(HT1628_DISP_WIFI_OFF);
++		break;
+ 	case CONNMAN_SERVICE_TYPE_BLUETOOTH:
+ 	case CONNMAN_SERVICE_TYPE_CELLULAR:
+ 	case CONNMAN_SERVICE_TYPE_P2P:
+diff --git a/src/skykirin-ht1628.c b/src/skykirin-ht1628.c
+new file mode 100644
+index 0000000..3530308
+--- /dev/null
++++ b/src/skykirin-ht1628.c
+@@ -0,0 +1,19 @@
++#include <connman/skykirin-ht1628.h>
++
++
++void set_ht1628_status(int cmd)
++{       char* filename = "/dev/skykirin-ht1628";
++	int fd;
++	fd = open(filename,O_RDWR);
++	if( ioctl(fd,cmd,NULL)){
++		printf("ht1628  error\n");
++	}else{
++		printf("ht1628  sucess\n");
++	}
++        close(fd);
++}
++
++
++
++
++
+-- 
+2.7.4
+
