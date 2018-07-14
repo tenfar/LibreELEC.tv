@@ -1,0 +1,1186 @@
+From 1a6c72eaf83434653f5212229022ffa24adf342f Mon Sep 17 00:00:00 2001
+From: Tenfar Lin <tenfar@gmail.com>
+Date: Sat, 26 May 2018 22:18:40 +0800
+Subject: [PATCH] add skykirin x99 support
+
+---
+ arch/arm/dts/rk3399-skykirinx99.dts      | 302 +++++++++++++++++++++++++++++++
+ arch/arm/mach-rockchip/rk3399/Kconfig    |   8 +
+ board/rockchip/skykirinx99/Kconfig       |  15 ++
+ board/rockchip/skykirinx99/MAINTAINERS   |   6 +
+ board/rockchip/skykirinx99/Makefile      |   7 +
+ board/rockchip/skykirinx99/skykirinx99.c | 225 +++++++++++++++++++++++
+ configs/skykirinx99_defconfig            | 102 +++++++++++
+ drivers/Kconfig                          |   2 +
+ drivers/Makefile                         |   2 +-
+ drivers/skykirin/Kconfig                 |  22 ++
+ drivers/skykirin/Makefile                |   9 +
+ drivers/skykirin/skykirin-uclass.c       |  59 ++++++
+ drivers/skykirin/skykirin_ht1628.c       | 155 ++++++++++++++++
+ include/configs/rockchip-common.h        |   9 +-
+ include/configs/skykirinx99.h            |  28 +++
+ include/dm/uclass-id.h                   |   1 +
+ include/skykirin.h                       |  60 ++++++
+ 17 files changed, 1007 insertions(+), 5 deletions(-)
+ create mode 100644 arch/arm/dts/rk3399-skykirinx99.dts
+ create mode 100644 board/rockchip/skykirinx99/Kconfig
+ create mode 100644 board/rockchip/skykirinx99/MAINTAINERS
+ create mode 100644 board/rockchip/skykirinx99/Makefile
+ create mode 100644 board/rockchip/skykirinx99/skykirinx99.c
+ create mode 100644 configs/skykirinx99_defconfig
+ create mode 100644 drivers/skykirin/Kconfig
+ create mode 100644 drivers/skykirin/Makefile
+ create mode 100644 drivers/skykirin/skykirin-uclass.c
+ create mode 100644 drivers/skykirin/skykirin_ht1628.c
+ create mode 100644 include/configs/skykirinx99.h
+ create mode 100644 include/skykirin.h
+
+diff --git a/arch/arm/dts/rk3399-skykirinx99.dts b/arch/arm/dts/rk3399-skykirinx99.dts
+new file mode 100644
+index 0000000..8ed3639
+--- /dev/null
++++ b/arch/arm/dts/rk3399-skykirinx99.dts
+@@ -0,0 +1,302 @@
++/*
++ * (C) Copyright 2016 Rockchip Electronics Co., Ltd
++ *
++ * SPDX-License-Identifier:     GPL-2.0+
++ */
++
++/dts-v1/;
++#include <dt-bindings/pwm/pwm.h>
++#include <dt-bindings/pinctrl/rockchip.h>
++#include "rk3399.dtsi"
++#include "rk3399-sdram-lpddr3-4GB-1600.dtsi"
++
++/ {
++	model = "SkyKirin X99 TV-BOX";
++	compatible = "skykirin,x99", "rockchip,rk3399",
++		     "google,rk3399evb-rev2";
++
++	chosen {
++		stdout-path = &uart2;
++		u-boot,spl-boot-order = &sdhci, &sdmmc;
++	};
++
++	skykirin-ht1628 {
++		compatible = "skykirin-ht1628";
++		spi_clk = <&gpio1 9 GPIO_ACTIVE_HIGH>;
++		spi_cs = <&gpio1 10 GPIO_ACTIVE_HIGH>;
++		spi_data = <&gpio1 8 GPIO_ACTIVE_HIGH>;
++		label = "skykirin-ht1628";
++		status = "okay";
++	};
++	
++	gpio-leds {
++		compatible = "gpio-leds";
++
++		led@1 {
++			gpios = <&gpio4 0x12 GPIO_ACTIVE_HIGH>;
++			label = "gpio_led"; 
++			retain-state-suspended;
++		};
++	};
++	
++	vdd_center: vdd-center {
++		compatible = "pwm-regulator";
++		pwms = <&pwm3 0 25000 1>;
++		regulator-name = "vdd_center";
++		regulator-min-microvolt = <800000>;
++		regulator-max-microvolt = <1400000>;
++		regulator-init-microvolt = <950000>;
++		regulator-always-on;
++		regulator-boot-on;
++		status = "okay";
++	};
++
++	vccsys: vccsys {
++		compatible = "regulator-fixed";
++		regulator-name = "vccsys";
++		regulator-boot-on;
++		regulator-always-on;
++	};
++
++	vcc3v3_sys: vcc3v3-sys {
++		compatible = "regulator-fixed";
++		regulator-name = "vcc3v3_sys";
++		regulator-always-on;
++		regulator-boot-on;
++		regulator-min-microvolt = <3300000>;
++		regulator-max-microvolt = <3300000>;
++	};
++
++	vcc_phy: vcc-phy-regulator {
++		compatible = "regulator-fixed";
++		regulator-name = "vcc_phy";
++		regulator-always-on;
++		regulator-boot-on;
++	};
++
++	vcc5v0_host: vcc5v0-host-en {
++		compatible = "regulator-fixed";
++		regulator-name = "vcc5v0_host";
++		gpio = <&gpio4 25 GPIO_ACTIVE_HIGH>;
++	};
++
++	vcc5v0_typec0: vcc5v0-typec0-en {
++		compatible = "regulator-fixed";
++		regulator-name = "vcc5v0_typec0";
++		gpio = <&gpio1 3 GPIO_ACTIVE_HIGH>;
++	};
++
++	vcc5v0_typec1: vcc5v0-typec1-en {
++		compatible = "regulator-fixed";
++		regulator-name = "vcc5v0_typec1";
++		gpio = <&gpio1 4 GPIO_ACTIVE_HIGH>;
++	};
++
++	clkin_gmac: external-gmac-clock {
++		compatible = "fixed-clock";
++		clock-frequency = <125000000>;
++		clock-output-names = "clkin_gmac";
++		#clock-cells = <0>;
++	};
++
++	backlight: backlight {
++		compatible = "pwm-backlight";
++		power-supply = <&vccsys>;
++		enable-gpios = <&gpio1 13 GPIO_ACTIVE_HIGH>;
++		brightness-levels = <
++			  0   1   2   3   4   5   6   7
++			  8   9  10  11  12  13  14  15
++			 16  17  18  19  20  21  22  23
++			 24  25  26  27  28  29  30  31
++			 32  33  34  35  36  37  38  39
++			 40  41  42  43  44  45  46  47
++			 48  49  50  51  52  53  54  55
++			 56  57  58  59  60  61  62  63
++			 64  65  66  67  68  69  70  71
++			 72  73  74  75  76  77  78  79
++			 80  81  82  83  84  85  86  87
++			 88  89  90  91  92  93  94  95
++			 96  97  98  99 100 101 102 103
++			104 105 106 107 108 109 110 111
++			112 113 114 115 116 117 118 119
++			120 121 122 123 124 125 126 127
++			128 129 130 131 132 133 134 135
++			136 137 138 139 140 141 142 143
++			144 145 146 147 148 149 150 151
++			152 153 154 155 156 157 158 159
++			160 161 162 163 164 165 166 167
++			168 169 170 171 172 173 174 175
++			176 177 178 179 180 181 182 183
++			184 185 186 187 188 189 190 191
++			192 193 194 195 196 197 198 199
++			200 201 202 203 204 205 206 207
++			208 209 210 211 212 213 214 215
++			216 217 218 219 220 221 222 223
++			224 225 226 227 228 229 230 231
++			232 233 234 235 236 237 238 239
++			240 241 242 243 244 245 246 247
++			248 249 250 251 252 253 254 255>;
++		default-brightness-level = <200>;
++		pwms = <&pwm0 0 25000 0>;
++		pinctrl-names = "default";
++		pinctrl-0 = <&pwm0_pin>;
++		pwm-delay-us = <10000>;
++		status = "disabled";
++	};
++
++	panel:panel {
++		compatible = "simple-panel";
++		power-supply = <&vcc33_lcd>;
++		backlight = <&backlight>;
++		/*enable-gpios = <&gpio4 18 GPIO_ACTIVE_HIGH>;*/
++		status = "disabled";
++	};
++};
++
++&emmc_phy {
++	status = "okay";
++};
++
++&pwm0 {
++	status = "okay";
++};
++
++&pwm2 {
++	status = "okay";
++};
++
++&pwm3 {
++	status = "okay";
++};
++
++&saradc {
++	status = "okay";
++};
++
++&sdmmc {
++	bus-width = <4>;
++	status = "okay";
++};
++
++&sdhci {
++	bus-width = <8>;
++	mmc-hs400-1_8v;
++	mmc-hs400-enhanced-strobe;
++	non-removable;
++	status = "okay";
++};
++
++&uart2 {
++	status = "okay";
++};
++
++&usb_host0_ehci {
++	status = "okay";
++};
++
++&usb_host0_ohci {
++	status = "okay";
++};
++
++&dwc3_typec0 {
++	vbus-supply = <&vcc5v0_typec0>;
++	status = "okay";
++};
++
++&usb_host1_ehci {
++	status = "okay";
++};
++
++&usb_host1_ohci {
++	status = "okay";
++};
++
++&dwc3_typec1 {
++	vbus-supply = <&vcc5v0_typec1>;
++	status = "okay";
++};
++
++&i2c0 {
++	status = "okay";
++	clock-frequency = <400000>;
++	i2c-scl-falling-time-ns = <50>;
++	i2c-scl-rising-time-ns = <100>;
++	u-boot,dm-pre-reloc;
++
++	rk808: pmic@1b {
++		compatible = "rockchip,rk808";
++		clock-output-names = "xin32k", "wifibt_32kin";
++		interrupt-parent = <&gpio0>;
++		interrupts = <4 IRQ_TYPE_LEVEL_LOW>;
++		pinctrl-names = "default";
++		pinctrl-0 = <&pmic_int_l>;
++		reg = <0x1b>;
++		rockchip,system-power-controller;
++		#clock-cells = <1>;
++		u-boot,dm-pre-reloc;
++		status = "okay";
++
++		vcc12-supply = <&vcc3v3_sys>;
++
++		regulators {
++			vcc33_lcd: SWITCH_REG2 {
++				regulator-always-on;
++				regulator-boot-on;
++				regulator-name = "vcc33_lcd";
++			};
++		};
++	};
++};
++
++&mipi_dsi {
++	status = "disabled";
++	rockchip,panel = <&panel>;
++	display-timings {
++		timing0 {
++		bits-per-pixel = <24>;
++		clock-frequency = <160000000>;
++		hfront-porch = <120>;
++		hsync-len = <20>;
++		hback-porch = <21>;
++		hactive = <1200>;
++		vfront-porch = <21>;
++		vsync-len = <3>;
++		vback-porch = <18>;
++		vactive = <1920>;
++		hsync-active = <0>;
++		vsync-active = <0>;
++		de-active = <1>;
++		pixelclk-active = <0>;
++		};
++	};
++};
++
++&pinctrl {
++	pmic {
++		pmic_int_l: pmic-int-l {
++			rockchip,pins =
++				<1 21 RK_FUNC_GPIO &pcfg_pull_up>;
++		};
++
++		pmic_dvs2: pmic-dvs2 {
++			rockchip,pins =
++				<1 18 RK_FUNC_GPIO &pcfg_pull_down>;
++		};
++	};
++};
++
++&gmac {
++        phy-supply = <&vcc_phy>;
++	phy-mode = "rgmii";
++	clock_in_out = "input";
++	snps,reset-gpio = <&gpio3 RK_PB7 GPIO_ACTIVE_LOW>;
++	snps,reset-active-low;
++	snps,reset-delays-us = <0 10000 50000>;
++	assigned-clocks = <&cru SCLK_RMII_SRC>;
++	assigned-clock-parents = <&clkin_gmac>;
++	pinctrl-names = "default";
++	pinctrl-0 = <&rgmii_pins>;
++	tx_delay = <0x10>;
++	rx_delay = <0x10>;
++	status = "okay";
++};
+diff --git a/arch/arm/mach-rockchip/rk3399/Kconfig b/arch/arm/mach-rockchip/rk3399/Kconfig
+index c17c839..084e8cf 100644
+--- a/arch/arm/mach-rockchip/rk3399/Kconfig
++++ b/arch/arm/mach-rockchip/rk3399/Kconfig
+@@ -16,6 +16,13 @@ config TARGET_ODROIDN1
+ 	select BOARD_LATE_INIT
+ 	help
+ 	  ODROID-N1 support
++	  
++	  
++config TARGET_SKYKIRINX99
++	bool "R-TV SkyKirin X99 TV-Box board"
++	select BOARD_LATE_INIT
++	help
++	  SkyKirin X99 TV Box support
+ 
+ config TARGET_PUMA_RK3399
+ 	bool "Theobroma Systems RK3399-Q7 (Puma)"
+@@ -45,6 +52,7 @@ config SYS_MALLOC_F_LEN
+ 
+ source "board/rockchip/evb_rk3399/Kconfig"
+ source "board/rockchip/odroidn1/Kconfig"
++source "board/rockchip/skykirinx99/Kconfig"
+ source "board/theobroma-systems/puma_rk3399/Kconfig"
+ 
+ endif
+diff --git a/board/rockchip/skykirinx99/Kconfig b/board/rockchip/skykirinx99/Kconfig
+new file mode 100644
+index 0000000..6852dbc
+--- /dev/null
++++ b/board/rockchip/skykirinx99/Kconfig
+@@ -0,0 +1,15 @@
++if TARGET_SKYKIRINX99
++
++config SYS_BOARD
++	default "skykirinx99"
++
++config SYS_VENDOR
++	default "rockchip"
++
++config SYS_CONFIG_NAME
++	default "skykirinx99"
++
++config BOARD_SPECIFIC_OPTIONS # dummy
++	def_bool y
++
++endif
+diff --git a/board/rockchip/skykirinx99/MAINTAINERS b/board/rockchip/skykirinx99/MAINTAINERS
+new file mode 100644
+index 0000000..84c50f4
+--- /dev/null
++++ b/board/rockchip/skykirinx99/MAINTAINERS
+@@ -0,0 +1,6 @@
++SKYKIRINX99
++M:      Mauro Ribeiro <tenfar@gmail.com>
++S:      Maintained
++F:      board/rockchip/skykirinx99
++F:      include/configs/skykirinx99.h
++F:      configs/skykirinx99_defconfig
+diff --git a/board/rockchip/skykirinx99/Makefile b/board/rockchip/skykirinx99/Makefile
+new file mode 100644
+index 0000000..a179d28
+--- /dev/null
++++ b/board/rockchip/skykirinx99/Makefile
+@@ -0,0 +1,7 @@
++#
++# (C) Copyright 2018 (c) Tenfar Lin <tenfar@gmail.com>
++#
++# SPDX-License-Identifier:     GPL-2.0+
++#
++
++obj-y	+= skykirinx99.o
+diff --git a/board/rockchip/skykirinx99/skykirinx99.c b/board/rockchip/skykirinx99/skykirinx99.c
+new file mode 100644
+index 0000000..1e6405d
+--- /dev/null
++++ b/board/rockchip/skykirinx99/skykirinx99.c
+@@ -0,0 +1,225 @@
++/*
++ * (C) Copyright 2018 (c) Tenfar Lin <tenfar@gmail.com>
++ *
++ * SPDX-License-Identifier:     GPL-2.0+
++ */
++#include <common.h>
++#include <dm.h>
++#include <misc.h>
++#include <ram.h>
++#include <dm/pinctrl.h>
++#include <dm/uclass-internal.h>
++#include <asm/setup.h>
++#include <asm/arch/periph.h>
++#include <power/regulator.h>
++#include <u-boot/sha256.h>
++#include <usb.h>
++#include <led.h>
++#include <skykirin.h>
++#include <dwc3-uboot.h>
++
++DECLARE_GLOBAL_DATA_PTR;
++
++#define RK3399_CPUID_OFF  0x7
++#define RK3399_CPUID_LEN  0x10
++
++int board_init(void)
++{
++	struct udevice *pinctrl, *regulator, *gpio_led, *skykirin_ht1628;
++	int ret;
++
++	/*
++	 * The PWM do not have decicated interrupt number in dts and can
++	 * not get periph_id by pinctrl framework, so let's init them here.
++	 * The PWM2 and PWM3 are for pwm regulater.
++	 */
++	ret = uclass_get_device(UCLASS_PINCTRL, 0, &pinctrl);
++	if (ret) {
++		debug("%s: Cannot find pinctrl device\n", __func__);
++		goto out;
++	}
++	
++	/* Enable pwm0 for panel backlight */
++	ret = pinctrl_request_noflags(pinctrl, PERIPH_ID_PWM0);
++	if (ret) {
++		debug("%s PWM0 pinctrl init fail! (ret=%d)\n", __func__, ret);
++		goto out;
++	}
++
++	/* Enable pwm2 to control regulator vdd-log */
++	ret = pinctrl_request_noflags(pinctrl, PERIPH_ID_PWM2);
++	if (ret) {
++		debug("%s PWM2 pinctrl init fail!\n", __func__);
++		goto out;
++	}
++
++	ret = pinctrl_request_noflags(pinctrl, PERIPH_ID_PWM3);
++	if (ret) {
++		debug("%s PWM3 pinctrl init fail!\n", __func__);
++		goto out;
++	}
++
++	ret = regulators_enable_boot_on(false);
++	if (ret)
++		debug("%s: Cannot enable boot on regulator\n", __func__);
++
++	ret = regulator_get_by_platname("vcc5v0_host", &regulator);
++	if (ret) {
++		debug("%s vcc5v0_host init fail! ret %d\n", __func__, ret);
++		goto out;
++	}
++
++	ret = regulator_set_enable(regulator, true);
++	if (ret) {
++		debug("%s vcc5v0-host-en set fail!\n", __func__);
++		goto out;
++	}
++
++	ret = uclass_get_device(UCLASS_LED, 0, &gpio_led);
++	if (ret){
++		debug("%s gpio-led get failed\n", __func__);
++		goto out;
++	}
++	ret = led_set_state(gpio_led,LEDST_ON);
++	if (ret){
++		debug("%s gpio-led set failed\n", __func__);
++		goto out;
++	}
++
++out:
++	return 0;
++}
++
++static void setup_macaddr(void)
++{
++#if CONFIG_IS_ENABLED(CMD_NET)
++	int ret;
++	const char *cpuid = env_get("cpuid#");
++	u8 hash[SHA256_SUM_LEN];
++	int size = sizeof(hash);
++	u8 mac_addr[6];
++
++	/* Only generate a MAC address, if none is set in the environment */
++	if (env_get("ethaddr"))
++		return;
++
++	if (!cpuid) {
++		debug("%s: could not retrieve 'cpuid#'\n", __func__);
++		return;
++	}
++
++	ret = hash_block("sha256", (void *)cpuid, strlen(cpuid), hash, &size);
++	if (ret) {
++		debug("%s: failed to calculate SHA256\n", __func__);
++		return;
++	}
++
++	/* Copy 6 bytes of the hash to base the MAC address on */
++	memcpy(mac_addr, hash, 6);
++
++	/* Make this a valid MAC address and set it */
++	mac_addr[0] &= 0xfe;  /* clear multicast bit */
++	mac_addr[0] |= 0x02;  /* set local assignment bit (IEEE802) */
++	eth_env_set_enetaddr("ethaddr", mac_addr);
++#endif
++
++	return;
++}
++
++static void setup_serial(void)
++{
++#if CONFIG_IS_ENABLED(ROCKCHIP_EFUSE)
++	struct udevice *dev;
++	int ret, i;
++	u8 cpuid[RK3399_CPUID_LEN];
++	u8 low[RK3399_CPUID_LEN/2], high[RK3399_CPUID_LEN/2];
++	char cpuid_str[RK3399_CPUID_LEN * 2 + 1];
++	u64 serialno;
++	char serialno_str[16];
++
++	/* retrieve the device */
++	ret = uclass_get_device_by_driver(UCLASS_MISC,
++					  DM_GET_DRIVER(rockchip_efuse), &dev);
++	if (ret) {
++		debug("%s: could not find efuse device\n", __func__);
++		return;
++	}
++
++	/* read the cpu_id range from the efuses */
++	ret = misc_read(dev, RK3399_CPUID_OFF, &cpuid, sizeof(cpuid));
++	if (ret) {
++		debug("%s: reading cpuid from the efuses failed\n",
++		      __func__);
++		return;
++	}
++
++	memset(cpuid_str, 0, sizeof(cpuid_str));
++	for (i = 0; i < 16; i++)
++		sprintf(&cpuid_str[i * 2], "%02x", cpuid[i]);
++
++	debug("cpuid: %s\n", cpuid_str);
++
++	/*
++	 * Mix the cpuid bytes using the same rules as in
++	 *   ${linux}/drivers/soc/rockchip/rockchip-cpuinfo.c
++	 */
++	for (i = 0; i < 8; i++) {
++		low[i] = cpuid[1 + (i << 1)];
++		high[i] = cpuid[i << 1];
++	}
++
++	serialno = crc32_no_comp(0, low, 8);
++	serialno |= (u64)crc32_no_comp(serialno, high, 8) << 32;
++	snprintf(serialno_str, sizeof(serialno_str), "%llx", serialno);
++
++	env_set("cpuid#", cpuid_str);
++	env_set("serial#", serialno_str);
++#endif
++
++	return;
++}
++
++int misc_init_r(void)
++{
++	setup_serial();
++	setup_macaddr();
++
++	return 0;
++}
++
++#ifdef CONFIG_SERIAL_TAG
++void get_board_serial(struct tag_serialnr *serialnr)
++{
++	char *serial_string;
++	u64 serial = 0;
++
++	serial_string = env_get("serial#");
++
++	if (serial_string)
++		serial = simple_strtoull(serial_string, NULL, 16);
++
++	serialnr->high = (u32)(serial >> 32);
++	serialnr->low = (u32)(serial & 0xffffffff);
++}
++#endif
++
++#ifdef CONFIG_USB_DWC3
++static struct dwc3_device dwc3_device_data = {
++	.maximum_speed = USB_SPEED_HIGH,
++	.base = 0xfe800000,
++	.dr_mode = USB_DR_MODE_HOST,
++	.index = 0,
++	.dis_u2_susphy_quirk = 1,
++};
++
++int usb_gadget_handle_interrupts(void)
++{
++	dwc3_uboot_handle_interrupt(0);
++	return 0;
++}
++
++int board_usb_init(int index, enum usb_init_type init)
++{
++	return dwc3_uboot_init(&dwc3_device_data);
++}
++#endif
+diff --git a/configs/skykirinx99_defconfig b/configs/skykirinx99_defconfig
+new file mode 100644
+index 0000000..d6608cd
+--- /dev/null
++++ b/configs/skykirinx99_defconfig
+@@ -0,0 +1,102 @@
++CONFIG_ARM=y
++CONFIG_ARCH_ROCKCHIP=y
++CONFIG_SPL_LIBCOMMON_SUPPORT=y
++CONFIG_SPL_LIBGENERIC_SUPPORT=y
++CONFIG_SYS_MALLOC_F_LEN=0x4000
++CONFIG_ROCKCHIP_RK3399=y
++CONFIG_TARGET_SKYKIRINX99=y
++CONFIG_SPL_STACK_R_ADDR=0x80000
++CONFIG_DEFAULT_DEVICE_TREE="rk3399-skykirinx99"
++CONFIG_DEBUG_UART=y
++CONFIG_FIT=y
++CONFIG_SPL_LOAD_FIT=y
++CONFIG_SPL_FIT_GENERATOR="board/rockchip/evb_rk3399/mk_fit_atf.sh"
++# CONFIG_DISPLAY_CPUINFO is not set
++CONFIG_ANDROID_BOOTLOADER=y
++CONFIG_SPL_STACK_R=y
++CONFIG_SPL_STACK_R_MALLOC_SIMPLE_LEN=0x4000
++CONFIG_SPL_ATF_SUPPORT=y
++CONFIG_FASTBOOT_BUF_ADDR=0x00800800
++CONFIG_FASTBOOT_BUF_SIZE=0x08000000
++CONFIG_FASTBOOT_FLASH=y
++CONFIG_FASTBOOT_FLASH_MMC_DEV=0
++CONFIG_CMD_BOOTZ=y
++# CONFIG_CMD_IMLS is not set
++CONFIG_CMD_GPT=y
++CONFIG_CMD_LOAD_ANDROID=y
++CONFIG_CMD_BOOT_ANDROID=y
++CONFIG_CMD_MMC=y
++CONFIG_CMD_SF=y
++CONFIG_CMD_USB=y
++CONFIG_CMD_USB_MASS_STORAGE=y
++# CONFIG_CMD_SETEXPR is not set
++CONFIG_CMD_TIME=y
++CONFIG_SPL_OF_CONTROL=y
++CONFIG_OF_SPL_REMOVE_PROPS="pinctrl-0 pinctrl-names clock-names interrupt-parent assigned-clocks assigned-clock-rates assigned-clock-parents"
++CONFIG_ENV_IS_IN_MMC=y
++CONFIG_NET_RANDOM_ETHADDR=y
++CONFIG_REGMAP=y
++CONFIG_SPL_REGMAP=y
++CONFIG_SYSCON=y
++CONFIG_SPL_SYSCON=y
++CONFIG_CLK=y
++CONFIG_SPL_CLK=y
++CONFIG_ROCKCHIP_GPIO=y
++CONFIG_SYS_I2C_ROCKCHIP=y
++CONFIG_MISC=y
++CONFIG_ROCKCHIP_EFUSE=y
++CONFIG_MMC_DW=y
++CONFIG_MMC_DW_ROCKCHIP=y
++CONFIG_MMC_SDHCI=y
++CONFIG_MMC_SDHCI_ROCKCHIP=y
++CONFIG_DM_ETH=y
++CONFIG_ETH_DESIGNWARE=y
++CONFIG_GMAC_ROCKCHIP=y
++CONFIG_PINCTRL=y
++CONFIG_SPL_PINCTRL=y
++CONFIG_PINCTRL_ROCKCHIP_RK3399=y
++CONFIG_DM_PMIC=y
++CONFIG_PMIC_RK8XX=y
++CONFIG_REGULATOR_PWM=y
++CONFIG_DM_REGULATOR_FIXED=y
++CONFIG_REGULATOR_RK8XX=y
++CONFIG_PWM_ROCKCHIP=y
++CONFIG_RAM=y
++CONFIG_SPL_RAM=y
++CONFIG_BAUDRATE=1500000
++CONFIG_DEBUG_UART_BASE=0xFF1A0000
++CONFIG_DEBUG_UART_CLOCK=24000000
++CONFIG_DEBUG_UART_SHIFT=2
++CONFIG_SYS_NS16550=y
++CONFIG_SYSRESET=y
++CONFIG_USB=y
++CONFIG_USB_XHCI_HCD=y
++CONFIG_USB_XHCI_DWC3=y
++CONFIG_USB_EHCI_HCD=y
++CONFIG_USB_EHCI_GENERIC=y
++CONFIG_USB_DWC3=y
++CONFIG_USB_DWC3_GADGET=y
++CONFIG_USB_STORAGE=y
++CONFIG_USB_GADGET=y
++CONFIG_USB_GADGET_DOWNLOAD=y
++CONFIG_G_DNL_MANUFACTURER="Rockchip"
++CONFIG_G_DNL_VENDOR_NUM=0x2207
++CONFIG_G_DNL_PRODUCT_NUM=0x330a
++CONFIG_USB_HOST_ETHER=y
++CONFIG_USB_ETHER_ASIX=y
++CONFIG_USB_ETHER_ASIX88179=y
++CONFIG_USB_ETHER_MCS7830=y
++CONFIG_USB_ETHER_RTL8152=y
++CONFIG_USB_ETHER_SMSC95XX=y
++CONFIG_DM_VIDEO=y
++CONFIG_DISPLAY=y
++CONFIG_VIDEO_ROCKCHIP=y
++CONFIG_VIDEO_ROCKCHIP_MAX_YRES=1200
++CONFIG_DM_GPIO=y
++CONFIG_USE_TINY_PRINTF=y
++CONFIG_ERRNO_STR=y
++CONFIG_LED_GPIO=y
++CONFIG_LED=y
++CONFIG_SKYKIRIN=y
++CONFIG_SKYKIRIN_HT1628=y
++CONFIG_SKYKIRIN_HT1628_LED=y
+diff --git a/drivers/Kconfig b/drivers/Kconfig
+index 2634873..d1f1e73 100644
+--- a/drivers/Kconfig
++++ b/drivers/Kconfig
+@@ -102,6 +102,8 @@ source "drivers/watchdog/Kconfig"
+ 
+ source "drivers/irq/Kconfig"
+ 
++source "drivers/skykirin/Kconfig"
++
+ config PHYS_TO_BUS
+ 	bool "Custom physical to bus address mapping"
+ 	help
+diff --git a/drivers/Makefile b/drivers/Makefile
+index b00a2ca..4805867 100644
+--- a/drivers/Makefile
++++ b/drivers/Makefile
+@@ -17,7 +17,7 @@ obj-$(CONFIG_$(SPL_TPL_)SPI_FLASH_SUPPORT) += mtd/spi/
+ obj-$(CONFIG_$(SPL_TPL_)SPI_SUPPORT) += spi/
+ obj-$(CONFIG_$(SPL_TPL_)TIMER) += timer/
+ obj-$(CONFIG_$(SPL_TPL_)IRQ) += irq/
+-
++obj-y += skykirin/
+ ifndef CONFIG_TPL_BUILD
+ ifdef CONFIG_SPL_BUILD
+ 
+diff --git a/drivers/skykirin/Kconfig b/drivers/skykirin/Kconfig
+new file mode 100644
+index 0000000..0cb06f7
+--- /dev/null
++++ b/drivers/skykirin/Kconfig
+@@ -0,0 +1,22 @@
++menu "Skykirin HT1628"
++config SKYKIRIN
++   bool
++	default y	
++     
++if SKYKIRIN
++config SKYKIRIN_HT1628
++	bool "Enable SKYKIRIN support"
++   default y
++	
++	help  
++	  U-Boot provides a uclass API to implement this feature. LED drivers
++	  can provide access to board-specific LEDs. Use of the device tree
++	  for configuration is encouraged.
++
++config SKYKIRIN_HT1628_LED
++	bool "LED Support for Skykirin HT1628"	
++   default y
++	help
++	  This option enables support for LEDs connected to HT1628
++endif
++endmenu
+diff --git a/drivers/skykirin/Makefile b/drivers/skykirin/Makefile
+new file mode 100644
+index 0000000..ea1e411
+--- /dev/null
++++ b/drivers/skykirin/Makefile
+@@ -0,0 +1,9 @@
++#
++# Copyright (c) 2018 Tenfar Lin
++# Written by Tenfar Lin (tenfar@gmail.com)
++#
++# 
++#
++
++obj-$(CONFIG_$(SPL_)SKYKIRIN_HT1628_LED) += skykirin-uclass.o
++obj-$(CONFIG_$(SPL_)SKYKIRIN_HT1628_LED) += skykirin_ht1628.o
+diff --git a/drivers/skykirin/skykirin-uclass.c b/drivers/skykirin/skykirin-uclass.c
+new file mode 100644
+index 0000000..cf589ee
+--- /dev/null
++++ b/drivers/skykirin/skykirin-uclass.c
+@@ -0,0 +1,59 @@
++/*
++ * Copyright (c) 2018 Tenfar Lin
++ * Written by Tenfar Lin <tenfar@gmail.com>
++ *
++ * SPDX-License-Identifier:	GPL-2.0+
++ */
++
++#include <common.h>
++#include <dm.h>
++#include <errno.h>
++#include <skykirin.h>
++#include <dm/root.h>
++#include <dm/uclass-internal.h>
++
++int skykirin_get_by_label(const char *label, struct udevice **devp)
++{
++	struct udevice *dev;
++	struct uclass *uc;
++	int ret;
++
++	ret = uclass_get(UCLASS_SKYKIRIN, &uc);
++	if (ret)
++		return ret;
++	uclass_foreach_dev(dev, uc) {
++		struct skykirin_uc_plat *uc_plat = dev_get_uclass_platdata(dev);
++
++		/* Ignore the top-level skykirin node */
++		if (uc_plat->label && !strcmp(label, uc_plat->label))
++			return uclass_get_device_tail(dev, 0, devp);
++	}
++
++	return -ENODEV;
++}
++
++int skykirin_send_command(struct udevice *dev,uint8_t command)
++{
++	struct skykirin_ops *ops = skykirin_get_ops(dev);
++
++	if (!ops->send_command)
++		return -ENOSYS;
++
++	return ops->send_command(dev, command);
++}
++
++int skykirin_send_data(struct udevice *dev,uint8_t data)
++{
++	struct skykirin_ops *ops = skykirin_get_ops(dev);
++
++	if (!ops->send_data)
++		return -ENOSYS;
++
++	return ops->send_data(dev,data);
++}
++
++UCLASS_DRIVER(skykirin) = {
++	.id		= UCLASS_SKYKIRIN,
++	.name		= "skykirin",
++	.per_device_platdata_auto_alloc_size = sizeof(struct skykirin_uc_plat),
++};
+diff --git a/drivers/skykirin/skykirin_ht1628.c b/drivers/skykirin/skykirin_ht1628.c
+new file mode 100644
+index 0000000..08d2008
+--- /dev/null
++++ b/drivers/skykirin/skykirin_ht1628.c
+@@ -0,0 +1,155 @@
++/*
++ * Copyright (c) 2018 Tenfar Lin
++ * Written by Tenfar Lin <tenfar@gmail.com>
++ *
++ * SPDX-License-Identifier:	GPL-2.0+
++ */
++
++#include <common.h>
++#include <dm.h>
++#include <errno.h>
++#include <skykirin.h>
++//#include <asm/gpio.h>
++#include <dm/lists.h>
++#include <asm-generic/gpio.h>
++DECLARE_GLOBAL_DATA_PTR;
++
++struct skykirin_ht1628_platform_data {
++	struct gpio_desc spi_clk;
++	struct gpio_desc spi_data;
++	struct gpio_desc spi_cs;
++};
++
++static int skykirin_ht1628_send_data(struct udevice *dev, uint8_t data)
++{
++	struct skykirin_ht1628_platform_data *plat = dev->platdata;
++
++  uint8_t i;
++  for (i = 0; i < 8; i++)
++  { udelay(42950);
++    dm_gpio_set_value(&plat->spi_clk, 0);
++    if (data & 0x01) dm_gpio_set_value(&plat->spi_data, 1);
++    else dm_gpio_set_value(&plat->spi_data, 0);
++    
++    udelay(42950);
++    data = data >> 1;
++    dm_gpio_set_value(&plat->spi_clk, 1);
++  };
++  udelay(42950);
++  return 0;
++
++
++}
++
++
++static int skykirin_ht1628_send_command(struct udevice *dev,uint8_t command)
++{
++	struct skykirin_ht1628_platform_data *plat = dev->platdata;
++
++	dm_gpio_set_value(&plat->spi_cs, 1);
++	udelay(42950);
++	dm_gpio_set_value(&plat->spi_cs, 0);
++	skykirin_ht1628_send_data(dev,command);
++	return 0;
++}
++static int skykirin_ht1628_probe(struct udevice *dev)
++{
++	//struct skykirin_uc_plat *uc_plat = dev_get_uclass_platdata(dev);
++	struct skykirin_ht1628_platform_data *plat = dev->platdata;
++	int ret;
++	ret = gpio_request_by_name(dev, "spi_clk", 0, &plat->spi_clk, GPIOD_IS_IN);
++	
++	ret = gpio_request_by_name(dev, "spi_data", 0, &plat->spi_data, GPIOD_IS_IN);
++	
++	ret = gpio_request_by_name(dev, "spi_cs", 0, &plat->spi_cs, GPIOD_IS_IN);
++	ret = gpio_request_by_name(dev, "spi_clk", 0, &plat->spi_clk, GPIOD_IS_OUT);
++	
++	ret = gpio_request_by_name(dev, "spi_data", 0, &plat->spi_data, GPIOD_IS_OUT);
++	
++	ret = gpio_request_by_name(dev, "spi_cs", 0, &plat->spi_cs, GPIOD_IS_OUT);
++    int	i = 8;
++
++	skykirin_ht1628_send_command(dev,0x3u);    //set mode to 3
++	skykirin_ht1628_send_command(dev,0x40u); //set address inc
++	skykirin_ht1628_send_command(dev,0xC0u); //set address 0
++	do //clear ram
++	{
++		skykirin_ht1628_send_data(dev,0);//clear ram
++		skykirin_ht1628_send_data(dev,0);
++		--i;
++	}
++	while ( i );
++	skykirin_ht1628_send_command(dev,0x44u); //set address fixed
++	skykirin_ht1628_send_command(dev,0x8Fu); //set display on
++	skykirin_ht1628_send_command(dev,0xC0u);
++	skykirin_ht1628_send_data(dev,0x38u);//L 
++	skykirin_ht1628_send_command(dev,0xC2u);
++	skykirin_ht1628_send_data(dev,0x3Fu);//O
++	skykirin_ht1628_send_command(dev,0xC4u);
++	skykirin_ht1628_send_data(dev,0x77u);//A
++	skykirin_ht1628_send_command(dev,0xC6u);
++	skykirin_ht1628_send_data(dev,0x5Eu);//d
++	skykirin_ht1628_send_command(dev,0xC8u); //set address 0xC8 maybe this is the power on sign?
++	skykirin_ht1628_send_data(dev,0x4u);
++	
++	return ret;
++}
++
++static int skykirin_ht1628_remove(struct udevice *dev)
++{
++	/*
++	 * The GPIO driver may have already been removed. We will need to
++	 * address this more generally.
++	 */
++   skykirin_ht1628_send_command(dev,0x87u);
++	return 0;
++}
++
++static int skykirin_ht1628_bind(struct udevice *parent)
++{
++	struct udevice *dev;
++	ofnode node;
++	int ret;
++
++	dev_for_each_subnode(node, parent) {
++		struct skykirin_uc_plat *uc_plat;
++		const char *label;
++
++		label = ofnode_read_string(node, "label");
++		if (!label) {
++			debug("%s: node %s has no label\n", __func__,
++			      ofnode_get_name(node));
++			return -EINVAL;
++		}
++		ret = device_bind_driver_to_node(parent, "skykirin-ht1628",
++						 ofnode_get_name(node),
++						 node, &dev);
++		if (ret)
++			return ret;
++		uc_plat = dev_get_uclass_platdata(dev);
++		uc_plat->label = label;
++	}
++
++	return 0;
++}
++
++static const struct skykirin_ops skykirin_ht1628_ops = {
++	.send_command	= skykirin_ht1628_send_command,
++	.send_data   = skykirin_ht1628_send_data,
++};
++
++static const struct udevice_id skykirin_ht1628_ids[] = {
++	{ .compatible = "skykirin-ht1628" },
++	{ }
++};
++
++U_BOOT_DRIVER(skykirin_ht1628) = {
++	.name	= "skykirin-ht1628",
++	.id	= UCLASS_SKYKIRIN,
++	.of_match = skykirin_ht1628_ids,
++	.ops	= &skykirin_ht1628_ops,
++	//.priv_auto_alloc_size = sizeof(struct skykirin_ht1628_priv),
++	.bind	= skykirin_ht1628_bind,
++	.probe	= skykirin_ht1628_probe,
++	.remove	= skykirin_ht1628_remove,
++};
+diff --git a/include/configs/rockchip-common.h b/include/configs/rockchip-common.h
+index 5b3fdb5..e9d5039 100644
+--- a/include/configs/rockchip-common.h
++++ b/include/configs/rockchip-common.h
+@@ -37,10 +37,11 @@
+ #define PARTS_DEFAULT \
+ 	"uuid_disk=${uuid_gpt_disk};" \
+ 	"name=loader1,start=32K,size=4000K,uuid=${uuid_gpt_loader1};" \
+-	"name=loader2,start=8MB,size=4MB,uuid=${uuid_gpt_loader2};" \
+-	"name=trust,size=4M,uuid=${uuid_gpt_atf};" \
+-	"name=boot,size=112M,bootable,uuid=${uuid_gpt_boot};" \
+-	"name=rootfs,size=-,uuid="ROOT_UUID
++	"name=uboot,start=4MB,size=4MB,uuid=${uuid_gpt_uboot};" \
++	"name=trust,size=4M,uuid=${uuid_gpt_trust};" \
++	"name=boot,start=16M,size=100M,bootable,uuid=${uuid_gpt_boot};" \
++	"name=system,size=512M,uuid=${uuid_gpt_system};" \
++	"name=disk,size=-,uuid=${uuid_gpt_disk};\0" 
+ 
+ #define PARTS_RKIMG \
+ 	"uuid_disk=${uuid_gpt_disk};" \
+diff --git a/include/configs/skykirinx99.h b/include/configs/skykirinx99.h
+new file mode 100644
+index 0000000..9e2c2e5
+--- /dev/null
++++ b/include/configs/skykirinx99.h
+@@ -0,0 +1,28 @@
++/*
++ * (C) Copyright 2016 Rockchip Electronics Co., Ltd
++ *
++ * SPDX-License-Identifier:     GPL-2.0+
++ */
++
++#ifndef __EVB_RK3399_H
++#define __EVB_RK3399_H
++
++#include <configs/rk3399_common.h>
++
++#define CONFIG_MMC_SDHCI_SDMA
++#define CONFIG_SYS_MMC_ENV_DEV 0
++
++#define SDRAM_BANK_SIZE			(2UL << 30)
++#define CONFIG_MISC_INIT_R
++#define CONFIG_SERIAL_TAG
++#define CONFIG_ENV_OVERWRITE
++
++#define CONFIG_BMP_16BPP
++#define CONFIG_BMP_24BPP
++#define CONFIG_BMP_32BPP
++
++#define ROCKCHIP_DEVICE_SETTINGS \
++		"stdout=serial,vidconsole\0" \
++		"stderr=serial,vidconsole\0"
++
++#endif
+diff --git a/include/dm/uclass-id.h b/include/dm/uclass-id.h
+index e74fcdd..c1d9245 100644
+--- a/include/dm/uclass-id.h
++++ b/include/dm/uclass-id.h
+@@ -95,6 +95,7 @@ enum uclass_id {
+ 	UCLASS_KEY,		/* Key */
+ 	UCLASS_RC,		/* Remote Controller */
+ 	UCLASS_CHARGE_DISPLAY,	/* Charge display */
++        UCLASS_SKYKIRIN, /*skykirin ht1628 led*/
+ 
+ 	UCLASS_COUNT,
+ 	UCLASS_INVALID = -1,
+diff --git a/include/skykirin.h b/include/skykirin.h
+new file mode 100644
+index 0000000..fbfac76
+--- /dev/null
++++ b/include/skykirin.h
+@@ -0,0 +1,60 @@
++/*
++ * Copyright (c) 2018 Tenfar Lin 
++ * Written by Tenfar Lin <tenfar@gmail.com>
++ *
++ * SPDX-License-Identifier:	GPL-2.0+
++ */
++#include <linux/delay.h>
++#ifndef __SKYKIRIN_H
++#define __SKYKIRIN_H
++
++/**
++ * struct skykirin_uc_plat - Platform data the uclass stores about each device
++ *
++ * @label:	LED label
++ */
++struct skykirin_uc_plat {
++	const char *label;
++};
++
++
++struct skykirin_ops {
++
++	int (*send_command)(struct udevice *dev, uint8_t command);
++	int (*send_data)(struct udevice *dev,uint8_t data);
++
++
++
++};
++
++#define skykirin_get_ops(dev)	((struct skykirin_ops *)(dev)->driver->ops)
++
++/**
++ * skykirin_get_by_label() - Find an LED device by label
++ *
++ * @label:	LED label to look up
++ * @devp:	Returns the associated device, if found
++ * @return 0 if found, -ENODEV if not found, other -ve on error
++ */
++int skykirin_get_by_label(const char *label, struct udevice **devp);
++
++/**
++ * skykirin_send_command() - send command to skykirin ht1628
++ *
++ * @dev:	skykirin device to change
++ * @command:	skykirin command to set
++ * @return 0 if OK, -ve on error
++ */
++int skykirin_send_command(struct udevice *dev, uint8_t command);
++
++/**
++ * skykirin_send_data() - send data to skykirin ht1628
++ *
++ * @dev:	skykirin device to change
++ * @data:   skykirin data to set
++ * @return skykirin state skykirin_state_t, or -ve on error
++ */
++int skykirin_send_data(struct udevice *dev,uint8_t data);
++
++
++#endif
+-- 
+2.7.4
+
