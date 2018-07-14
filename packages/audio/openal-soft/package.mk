@@ -1,6 +1,6 @@
 ################################################################################
 #      This file is part of LibreELEC - https://libreelec.tv
-#      Copyright (C) 2018-present Team LibreELEC
+#      Copyright (C) 2016-present Team LibreELEC
 #
 #  LibreELEC is free software: you can redistribute it and/or modify
 #  it under the terms of the GNU General Public License as published by
@@ -16,27 +16,19 @@
 #  along with LibreELEC.  If not, see <http://www.gnu.org/licenses/>.
 ################################################################################
 
-PKG_NAME="snapcast"
-PKG_VERSION="0.15.0"
-PKG_SHA256="7c584fad4941a299339fe060174e33c4d810b1cbe80d6efbee54da3dafb252cc"
+PKG_NAME="openal-soft"
+PKG_VERSION="1.18.2"
+PKG_SHA256="9f8ac1e27fba15a59758a13f0c7f6540a0605b6c3a691def9d420570506d7e82"
 PKG_ARCH="any"
-PKG_LICENSE="GPLv3"
-PKG_SITE="https://github.com/badaix/snapcast"
-PKG_URL="https://github.com/badaix/snapcast/archive/v$PKG_VERSION.tar.gz"
-PKG_DEPENDS_TARGET="toolchain aixlog alsa-lib asio avahi flac libvorbis popl"
-PKG_SECTION="tools"
-PKG_LONGDESC="Synchronous multi-room audio player"
-PKG_TOOLCHAIN="make"
+PKG_LICENSE="GPL"
+PKG_SITE="http://www.openal.org/"
+PKG_URL="http://kcat.strangesoft.net/openal-releases/$PKG_NAME-$PKG_VERSION.tar.bz2"
+PKG_DEPENDS_TARGET="toolchain alsa-lib"
+PKG_LONGDESC="OpenAL the Open Audio Library"
 
-pre_configure_target() {
-  cd ..
-  rm -rf .$TARGET_NAME
-  CXXFLAGS="$CXXFLAGS -pthread \
-                      -I$(get_build_dir aixlog)/include \
-                      -I$(get_build_dir asio)/asio/include \
-                      -I$(get_build_dir popl)/include"
-}
-
-makeinstall_target() {
-  :
-}
+PKG_CMAKE_OPTS_TARGET="-DALSOFT_BACKEND_OSS=off \
+                       -DALSOFT_BACKEND_WAVE=off \
+                       -DALSOFT_BACKEND_PULSEAUDIO=off \
+                       -DALSOFT_EXAMPLES=off \
+                       -DALSOFT_TESTS=off \
+                       -DALSOFT_UTILS=off"

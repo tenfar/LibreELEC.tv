@@ -16,27 +16,17 @@
 #  along with LibreELEC.  If not, see <http://www.gnu.org/licenses/>.
 ################################################################################
 
-PKG_NAME="snapcast"
-PKG_VERSION="0.15.0"
-PKG_SHA256="7c584fad4941a299339fe060174e33c4d810b1cbe80d6efbee54da3dafb252cc"
+PKG_NAME="game.libretro.uae"
+PKG_VERSION="b0f7c0d"
+PKG_SHA256="87d4074ccc5e8ba35aa8adaeafcf40bfce94c2d3e61ee768a25c8a0f38f7aeb4"
+PKG_REV="100"
 PKG_ARCH="any"
-PKG_LICENSE="GPLv3"
-PKG_SITE="https://github.com/badaix/snapcast"
-PKG_URL="https://github.com/badaix/snapcast/archive/v$PKG_VERSION.tar.gz"
-PKG_DEPENDS_TARGET="toolchain aixlog alsa-lib asio avahi flac libvorbis popl"
-PKG_SECTION="tools"
-PKG_LONGDESC="Synchronous multi-room audio player"
-PKG_TOOLCHAIN="make"
+PKG_LICENSE="GPL"
+PKG_SITE="https://github.com/kodi-game/game.libretro.uae"
+PKG_URL="https://github.com/kodi-game/game.libretro.uae/archive/$PKG_VERSION.tar.gz"
+PKG_DEPENDS_TARGET="toolchain kodi-platform libretro-uae"
+PKG_SECTION=""
+PKG_LONGDESC="game.libretro.uae: uae emulator for Kodi"
 
-pre_configure_target() {
-  cd ..
-  rm -rf .$TARGET_NAME
-  CXXFLAGS="$CXXFLAGS -pthread \
-                      -I$(get_build_dir aixlog)/include \
-                      -I$(get_build_dir asio)/asio/include \
-                      -I$(get_build_dir popl)/include"
-}
-
-makeinstall_target() {
-  :
-}
+PKG_IS_ADDON="yes"
+PKG_ADDON_TYPE="kodi.gameclient"

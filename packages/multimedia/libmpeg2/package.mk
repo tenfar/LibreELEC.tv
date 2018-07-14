@@ -1,6 +1,7 @@
 ################################################################################
 #      This file is part of LibreELEC - https://libreelec.tv
 #      Copyright (C) 2018-present Team LibreELEC
+#      Copyright (C) 2009-2016 Stephan Raue (stephan@openelec.tv)
 #
 #  LibreELEC is free software: you can redistribute it and/or modify
 #  it under the terms of the GNU General Public License as published by
@@ -16,27 +17,19 @@
 #  along with LibreELEC.  If not, see <http://www.gnu.org/licenses/>.
 ################################################################################
 
-PKG_NAME="snapcast"
-PKG_VERSION="0.15.0"
-PKG_SHA256="7c584fad4941a299339fe060174e33c4d810b1cbe80d6efbee54da3dafb252cc"
+PKG_NAME="libmpeg2"
+PKG_VERSION="0.5.1"
+PKG_SHA256="dee22e893cb5fc2b2b6ebd60b88478ab8556cb3b93f9a0d7ce8f3b61851871d4"
 PKG_ARCH="any"
-PKG_LICENSE="GPLv3"
-PKG_SITE="https://github.com/badaix/snapcast"
-PKG_URL="https://github.com/badaix/snapcast/archive/v$PKG_VERSION.tar.gz"
-PKG_DEPENDS_TARGET="toolchain aixlog alsa-lib asio avahi flac libvorbis popl"
-PKG_SECTION="tools"
-PKG_LONGDESC="Synchronous multi-room audio player"
-PKG_TOOLCHAIN="make"
+PKG_LICENSE="GPLv2"
+PKG_SITE="http://libmpeg2.sourceforge.net/"
+PKG_URL="http://libmpeg2.sourceforge.net/files/$PKG_NAME-$PKG_VERSION.tar.gz"
+PKG_DEPENDS_TARGET="toolchain"
+PKG_LONGDESC="The MPEG Library is a collection of C routines to decode MPEG-1 and MPEG-2 movies."
 
-pre_configure_target() {
-  cd ..
-  rm -rf .$TARGET_NAME
-  CXXFLAGS="$CXXFLAGS -pthread \
-                      -I$(get_build_dir aixlog)/include \
-                      -I$(get_build_dir asio)/asio/include \
-                      -I$(get_build_dir popl)/include"
-}
+PKG_CONFIGURE_OPTS_TARGET="--disable-sdl \
+                           --without-x"
 
-makeinstall_target() {
-  :
+post_makeinstall_target() {
+  rm -rf $INSTALL/usr/bin
 }

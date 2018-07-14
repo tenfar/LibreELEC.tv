@@ -16,27 +16,17 @@
 #  along with LibreELEC.  If not, see <http://www.gnu.org/licenses/>.
 ################################################################################
 
-PKG_NAME="snapcast"
-PKG_VERSION="0.15.0"
-PKG_SHA256="7c584fad4941a299339fe060174e33c4d810b1cbe80d6efbee54da3dafb252cc"
+PKG_NAME="game.libretro.vram-test"
+PKG_VERSION="0c29c7b"
+PKG_SHA256="ece792fb35a7bf1cbf9c07c335149a5f05d92181289612b121fd529204e16278"
+PKG_REV="100"
 PKG_ARCH="any"
-PKG_LICENSE="GPLv3"
-PKG_SITE="https://github.com/badaix/snapcast"
-PKG_URL="https://github.com/badaix/snapcast/archive/v$PKG_VERSION.tar.gz"
-PKG_DEPENDS_TARGET="toolchain aixlog alsa-lib asio avahi flac libvorbis popl"
-PKG_SECTION="tools"
-PKG_LONGDESC="Synchronous multi-room audio player"
-PKG_TOOLCHAIN="make"
+PKG_LICENSE="GPL"
+PKG_SITE="https://github.com/kodi-game/game.libretro.vram-test"
+PKG_URL="https://github.com/kodi-game/game.libretro.vram-test/archive/$PKG_VERSION.tar.gz"
+PKG_DEPENDS_TARGET="toolchain kodi-platform libretro-vram-test"
+PKG_SECTION=""
+PKG_LONGDESC="game.libretro.vram-test: vram-test emulator for Kodi"
 
-pre_configure_target() {
-  cd ..
-  rm -rf .$TARGET_NAME
-  CXXFLAGS="$CXXFLAGS -pthread \
-                      -I$(get_build_dir aixlog)/include \
-                      -I$(get_build_dir asio)/asio/include \
-                      -I$(get_build_dir popl)/include"
-}
-
-makeinstall_target() {
-  :
-}
+PKG_IS_ADDON="yes"
+PKG_ADDON_TYPE="kodi.gameclient"

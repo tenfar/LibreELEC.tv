@@ -16,27 +16,28 @@
 #  along with LibreELEC.  If not, see <http://www.gnu.org/licenses/>.
 ################################################################################
 
-PKG_NAME="snapcast"
-PKG_VERSION="0.15.0"
-PKG_SHA256="7c584fad4941a299339fe060174e33c4d810b1cbe80d6efbee54da3dafb252cc"
+PKG_NAME="libretro-sameboy"
+PKG_VERSION="1829313" #buildbot branch
+PKG_SHA256="fb30679f5fe056bc87ce49e0d493bc4ffec66d4c143893ac0734c9bf47aca7e1"
 PKG_ARCH="any"
-PKG_LICENSE="GPLv3"
-PKG_SITE="https://github.com/badaix/snapcast"
-PKG_URL="https://github.com/badaix/snapcast/archive/v$PKG_VERSION.tar.gz"
-PKG_DEPENDS_TARGET="toolchain aixlog alsa-lib asio avahi flac libvorbis popl"
-PKG_SECTION="tools"
-PKG_LONGDESC="Synchronous multi-room audio player"
-PKG_TOOLCHAIN="make"
+PKG_LICENSE="MIT"
+PKG_SITE="https://github.com/libretro/sameboy"
+PKG_URL="https://github.com/libretro/sameboy/archive/$PKG_VERSION.tar.gz"
+PKG_SOURCE_DIR="SameBoy-$PKG_VERSION*"
+PKG_DEPENDS_TARGET="toolchain kodi-platform"
+PKG_SECTION="emulation"
+PKG_LONGDESC="libretro wrapper for SameBoy emulator."
 
-pre_configure_target() {
-  cd ..
-  rm -rf .$TARGET_NAME
-  CXXFLAGS="$CXXFLAGS -pthread \
-                      -I$(get_build_dir aixlog)/include \
-                      -I$(get_build_dir asio)/asio/include \
-                      -I$(get_build_dir popl)/include"
+PKG_LIBNAME="sameboy_libretro.so"
+PKG_LIBPATH="libretro/$PKG_LIBNAME"
+PKG_LIBVAR="SAMEBOY_LIB"
+
+make_target() {
+  make -C libretro
 }
 
 makeinstall_target() {
-  :
+  mkdir -p $SYSROOT_PREFIX/usr/lib/cmake/$PKG_NAME
+  cp $PKG_LIBPATH $SYSROOT_PREFIX/usr/lib/$PKG_LIBNAME
+  echo "set($PKG_LIBVAR $SYSROOT_PREFIX/usr/lib/$PKG_LIBNAME)" > $SYSROOT_PREFIX/usr/lib/cmake/$PKG_NAME/$PKG_NAME-config.cmake
 }

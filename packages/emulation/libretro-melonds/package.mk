@@ -16,27 +16,29 @@
 #  along with LibreELEC.  If not, see <http://www.gnu.org/licenses/>.
 ################################################################################
 
-PKG_NAME="snapcast"
-PKG_VERSION="0.15.0"
-PKG_SHA256="7c584fad4941a299339fe060174e33c4d810b1cbe80d6efbee54da3dafb252cc"
+PKG_NAME="libretro-melonds"
+PKG_VERSION="ee2f3e3"
+PKG_SHA256="008aab83d55dbb0aed05020d6f39b7fd91eccc2e12e65f674c67110fc48b5d88"
 PKG_ARCH="any"
 PKG_LICENSE="GPLv3"
-PKG_SITE="https://github.com/badaix/snapcast"
-PKG_URL="https://github.com/badaix/snapcast/archive/v$PKG_VERSION.tar.gz"
-PKG_DEPENDS_TARGET="toolchain aixlog alsa-lib asio avahi flac libvorbis popl"
-PKG_SECTION="tools"
-PKG_LONGDESC="Synchronous multi-room audio player"
+PKG_SITE="https://github.com/libretro/melonds"
+PKG_URL="https://github.com/libretro/melonds/archive/$PKG_VERSION.tar.gz"
+PKG_SOURCE_DIR="melonDS-$PKG_VERSION*"
+PKG_DEPENDS_TARGET="toolchain kodi-platform"
+PKG_SECTION="emulation"
+PKG_LONGDESC="libretro wrapper for melonDS DS emulator."
 PKG_TOOLCHAIN="make"
 
-pre_configure_target() {
-  cd ..
-  rm -rf .$TARGET_NAME
-  CXXFLAGS="$CXXFLAGS -pthread \
-                      -I$(get_build_dir aixlog)/include \
-                      -I$(get_build_dir asio)/asio/include \
-                      -I$(get_build_dir popl)/include"
+PKG_LIBNAME="melonds_libretro.so"
+PKG_LIBPATH="$PKG_LIBNAME"
+PKG_LIBVAR="MELONDS_LIB"
+
+configure_target() {
+  cd $PKG_BUILD
 }
 
 makeinstall_target() {
-  :
+  mkdir -p $SYSROOT_PREFIX/usr/lib/cmake/$PKG_NAME
+  cp $PKG_LIBPATH $SYSROOT_PREFIX/usr/lib/$PKG_LIBNAME
+  echo "set($PKG_LIBVAR $SYSROOT_PREFIX/usr/lib/$PKG_LIBNAME)" > $SYSROOT_PREFIX/usr/lib/cmake/$PKG_NAME/$PKG_NAME-config.cmake
 }
