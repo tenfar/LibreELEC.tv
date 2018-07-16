@@ -290,6 +290,7 @@ fi # bootloader
 # merge part2 back to disk image
   echo "image: merging part2 back to image..."
   dd if="$LE_TMP/part2.ext4" of="$DISK" bs=512 seek="$STORAGE_PART_START" conv=fsync,notrunc >"$SAVE_ERROR" 2>&1 || show_error
+  cp $LE_TMP/part2.ext4 rkimage/disk.img
 
 # extract part1 from image to run fsck
   echo "image: extracting part1 from image..."

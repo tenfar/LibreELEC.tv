@@ -1,0 +1,111 @@
+From 3823503388d9476b10082048011ac14de9ddd945 Mon Sep 17 00:00:00 2001
+From: Tenfar Lin <tenfar@gmail.com>
+Date: Mon, 16 Jul 2018 21:47:59 +0800
+Subject: [PATCH] change vedio out to vopb_out_hdmi
+
+---
+ .../arm64/boot/dts/rockchip/rk3399-skykirinx99.dts | 54 ++++++++++++++++++++--
+ 1 file changed, 51 insertions(+), 3 deletions(-)
+
+diff --git a/arch/arm64/boot/dts/rockchip/rk3399-skykirinx99.dts b/arch/arm64/boot/dts/rockchip/rk3399-skykirinx99.dts
+index 6139158..f15e15b 100644
+--- a/arch/arm64/boot/dts/rockchip/rk3399-skykirinx99.dts
++++ b/arch/arm64/boot/dts/rockchip/rk3399-skykirinx99.dts
+@@ -268,6 +268,14 @@
+ 	#address-cells = <1>;
+ 	#size-cells = <0>;
+ 	#sound-dai-cells = <0>;
++	ddc-i2c-scl-high-time-ns = <9625>;
++	ddc-i2c-scl-low-time-ns = <10000>;
++	rockchip,phy-table =
++		<74250000 0x8009 0x0004 0x0272>,
++		<165000000 0x802b 0x0004 0x0209>,
++		<297000000 0x8039 0x0005 0x028d>,
++		<594000000 0x8039 0x0000 0x019d>,
++		<000000000 0x0000 0x0000 0x0000>;
+ 	status = "okay";
+ };
+ 
+@@ -336,7 +344,9 @@
+ &spdif {
+ 	pinctrl-0 = <&spdif_bus_1>;
+ 	status = "okay";
+-	#sound-dai-cells = <0>;
++	#sound-dai-cells = <0
++	assigned-clocks = <&cru SCLK_SPDIF_DIV>;
++	assigned-clock-parents = <&cru PLL_GPLL>;
+ };
+ 
+ &i2c0 {
+@@ -1004,11 +1014,15 @@
+ };
+ 
+ &vopb {
++	assigned-clocks = <&cru DCLK_VOP0_DIV>;
++	assigned-clock-parents = <&cru PLL_VPLL>;
+ 	status = "okay";
+ };
+ 
+ 
+ &vopl {
++	assigned-clocks = <&cru DCLK_VOP1_DIV>;
++	assigned-clock-parents = <&cru PLL_CPLL>;
+     status = "okay";
+ };
+ 
+@@ -1042,16 +1056,50 @@
+ &vpu {
+ 	status = "okay";
+ 	/* 0 means ion, 1 means drm */
+-	//allocator = <0>;
++	allocator = <1>;
+ };
+ 
+ &rkvdec {
+ 	status = "okay";
+ 	/* 0 means ion, 1 means drm */
+-	//allocator = <0>;
++	allocator = <1>;
+ };
+ 
+ &display_subsystem {
++	ports = <&vopb_out>, <&vopl_out>;
++	logo-memory-region = <&drm_logo>;
++
++	route {
++		route_hdmi: route-hdmi {
++			status = "enable";
++			logo,uboot = "logo.bmp";
++			logo,kernel = "logo_kernel.bmp";
++			logo,mode = "center";
++			charge_logo,mode = "center";
++			connect = <&vopb_out_hdmi>;
++		};
++
++		route_dsi: route-dsi {
++			status = "disabled";
++			logo,uboot = "logo.bmp";
++			logo,kernel = "logo_kernel.bmp";
++			logo,mode = "center";
++			charge_logo,mode = "center";
++			connect = <&vopb_out_dsi>;
++		};
++
++		route_edp: route-edp {
++			status = "disabled";
++			logo,uboot = "logo.bmp";
++			logo,kernel = "logo_kernel.bmp";
++			logo,mode = "center";
++			charge_logo,mode = "center";
++			connect = <&vopb_out_edp>;
++		};
++	};
++};
++	
++&vop0_pwm {
+ 	status = "okay";
+ };
+ 	
+-- 
+2.7.4
+
